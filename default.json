@@ -1,0 +1,57 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": "owine/* baseline — supply-chain hardened defaults. Pin everything, soak releases, escalate CVEs.",
+  "extends": [
+    "config:best-practices",
+    "helpers:pinGitHubActionDigests",
+    "security:openssf-scorecard",
+    ":dependencyDashboard",
+    ":semanticCommits"
+  ],
+  "timezone": "America/Chicago",
+  "schedule": ["before 6am on monday"],
+  "automergeSchedule": ["at any time"],
+  "labels": ["dependencies"],
+  "semanticCommitType": "deps",
+  "semanticCommitScope": null,
+  "configMigration": true,
+  "rebaseWhen": "behind-base-branch",
+  "rangeStrategy": "pin",
+  "separateMajorMinor": true,
+  "separateMultipleMajor": true,
+  "prHourlyLimit": 0,
+  "prConcurrentLimit": 0,
+  "minimumReleaseAge": "3 days",
+  "osvVulnerabilityAlerts": true,
+  "dependencyDashboardOSVVulnerabilitySummary": "all",
+  "vulnerabilityAlerts": {
+    "labels": ["security"],
+    "minimumReleaseAge": "0 days",
+    "schedule": ["at any time"],
+    "automerge": true
+  },
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["before 6am on monday"],
+    "automerge": true
+  },
+  "packageRules": [
+    {
+      "description": "Major bumps — separate PR per package, 7-day soak, manual review required",
+      "matchUpdateTypes": ["major"],
+      "minimumReleaseAge": "7 days",
+      "automerge": false,
+      "addLabels": ["major-update", "needs-review"]
+    },
+    {
+      "description": "Pin Docker image and GitHub Action digests so a re-tagged image/action can't slip in",
+      "matchManagers": ["dockerfile", "github-actions"],
+      "pinDigests": true
+    },
+    {
+      "description": "docker-compose files use floating tags by design (dev convenience); disable so Renovate doesn't fight them",
+      "matchManagers": ["docker-compose"],
+      "enabled": false
+    }
+  ]
+}

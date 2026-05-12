@@ -1,0 +1,61 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": "Node/TypeScript ecosystem groupings — peer-dep coupled families that must move together.",
+  "packageRules": [
+    {
+      "description": "React core + types",
+      "matchPackageNames": ["react", "react-dom", "@types/react", "@types/react-dom"],
+      "groupName": "react"
+    },
+    {
+      "description": "TanStack libraries (router/query/table share majors)",
+      "matchPackageNames": ["/^@tanstack//"],
+      "groupName": "tanstack"
+    },
+    {
+      "description": "Radix UI primitives (shadcn/ui)",
+      "matchPackageNames": ["/^@radix-ui//"],
+      "groupName": "radix-ui"
+    },
+    {
+      "description": "Vite + plugins (plugin majors track Vite majors)",
+      "matchPackageNames": ["vite", "/^@vitejs//"],
+      "groupName": "vite"
+    },
+    {
+      "description": "Vitest stack (engine + coverage + testcontainers + vite peer)",
+      "matchPackageNames": [
+        "vitest",
+        "@vitest/coverage-v8",
+        "testcontainers",
+        "/^@testcontainers//"
+      ],
+      "groupName": "testing"
+    },
+    {
+      "description": "ESLint plugins + typescript-eslint",
+      "matchPackageNames": ["/^eslint-/", "/^@typescript-eslint//"],
+      "groupName": "eslint plugins"
+    },
+    {
+      "description": "Prisma — client + adapter + CLI must bump together",
+      "matchPackageNames": ["prisma", "/^@prisma//"],
+      "groupName": "prisma"
+    },
+    {
+      "description": "Auth.js — peer-dep coupled",
+      "matchPackageNames": ["next-auth", "/^@auth//"],
+      "groupName": "auth.js"
+    },
+    {
+      "description": "pg + types",
+      "matchPackageNames": ["pg", "@types/pg"],
+      "groupName": "pg"
+    },
+    {
+      "description": "Node + pnpm toolchain — engines, packageManager, .nvmrc, Dockerfile FROM all move in lockstep",
+      "matchPackageNames": ["node", "pnpm"],
+      "groupName": "toolchain-versions"
+    }
+  ]
+}

@@ -1,0 +1,55 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": "Docker + GitHub Actions hardening. Group base images, group common actions, flag runtime majors as breaking.",
+  "packageRules": [
+    {
+      "description": "Dockerfile base images — group bumps + digest pins together",
+      "matchManagers": ["dockerfile"],
+      "matchUpdateTypes": ["patch", "minor", "digest", "pinDigest"],
+      "groupName": "dockerfile bases"
+    },
+    {
+      "description": "GitHub Actions setup family — checkout/setup-node/setup-python/setup-go/pnpm",
+      "matchManagers": ["github-actions"],
+      "matchPackageNames": [
+        "actions/checkout",
+        "actions/setup-node",
+        "actions/setup-python",
+        "actions/setup-go",
+        "pnpm/action-setup",
+        "astral-sh/setup-uv"
+      ],
+      "groupName": "github-actions-setup"
+    },
+    {
+      "description": "GitHub Actions artifact family — upload + download must stay paired",
+      "matchManagers": ["github-actions"],
+      "matchPackageNames": ["actions/upload-artifact", "actions/download-artifact"],
+      "groupName": "github-actions-artifact"
+    },
+    {
+      "description": "Docker actions family (build/login/metadata/buildx/qemu)",
+      "matchManagers": ["github-actions"],
+      "matchPackageNames": [
+        "docker/build-push-action",
+        "docker/login-action",
+        "docker/metadata-action",
+        "docker/setup-buildx-action",
+        "docker/setup-qemu-action"
+      ],
+      "groupName": "docker-actions"
+    },
+    {
+      "description": "Runtime/data-tier major bumps are breaking-change candidates — extra labels",
+      "matchPackageNames": [
+        "node",
+        "python",
+        "/^docker\\.io\\/library\\/postgres/",
+        "/^docker\\.io\\/library\\/python/",
+        "/^docker\\.io\\/library\\/node/"
+      ],
+      "matchUpdateTypes": ["major"],
+      "addLabels": ["breaking", "needs-review"]
+    }
+  ]
+}

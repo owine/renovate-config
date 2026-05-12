@@ -1,0 +1,54 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": "Python ecosystem groupings (pep621/uv/poetry). Peer-dep coupled stacks bundled together.",
+  "pep621": { "enabled": true },
+  "pre-commit": { "enabled": true },
+  "packageRules": [
+    {
+      "description": "FastAPI + ASGI stack (web layer)",
+      "matchManagers": ["pep621"],
+      "matchPackageNames": [
+        "fastapi",
+        "uvicorn",
+        "starlette",
+        "jinja2",
+        "httpx",
+        "itsdangerous",
+        "structlog",
+        "authlib",
+        "python-multipart"
+      ],
+      "groupName": "fastapi-stack"
+    },
+    {
+      "description": "Pydantic + pydantic-settings (released together)",
+      "matchManagers": ["pep621"],
+      "matchPackageNames": ["pydantic", "pydantic-settings"],
+      "groupName": "pydantic"
+    },
+    {
+      "description": "SQLAlchemy + drivers + Alembic (data layer)",
+      "matchManagers": ["pep621"],
+      "matchPackageNames": ["sqlalchemy", "alembic", "asyncpg", "psycopg", "aiosqlite"],
+      "groupName": "sqlalchemy-stack"
+    },
+    {
+      "description": "pytest + plugins + respx (test infra)",
+      "matchManagers": ["pep621"],
+      "matchPackageNames": ["pytest", "/^pytest-/", "respx"],
+      "groupName": "pytest-stack"
+    },
+    {
+      "description": "Lint + type tooling (ruff/mypy/bandit/pip-audit/djlint/types-*/pre-commit)",
+      "matchManagers": ["pep621"],
+      "matchPackageNames": ["ruff", "mypy", "bandit", "pip-audit", "djlint", "/^types-/", "pre-commit"],
+      "groupName": "lint + types tooling"
+    },
+    {
+      "description": "Don't track `python` in pep621 — `requires-python` is a min-version metadata range, not a runtime pin",
+      "matchManagers": ["pep621"],
+      "matchDepNames": ["python"],
+      "enabled": false
+    }
+  ]
+}

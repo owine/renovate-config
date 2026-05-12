@@ -1,0 +1,13 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": "Grouped automerge for all non-major updates. Extend AFTER default.json. Skip in repos that need stricter review.",
+  "packageRules": [
+    {
+      "description": "Bundle every non-major update into a single weekly PR and automerge once CI passes",
+      "matchUpdateTypes": ["patch", "minor", "pin", "digest", "pinDigest", "lockFileMaintenance"],
+      "groupName": "all non-major dependencies",
+      "automerge": true,
+      "automergeType": "pr"
+    }
+  ]
+}
