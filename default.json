@@ -21,7 +21,7 @@
   "separateMultipleMajor": true,
   "prHourlyLimit": 0,
   "prConcurrentLimit": 0,
-  "minimumReleaseAge": "3 days",
+  "minimumReleaseAge": "7 days",
   "osvVulnerabilityAlerts": true,
   "dependencyDashboardOSVVulnerabilitySummary": "all",
   "vulnerabilityAlerts": {
