@@ -53,6 +53,21 @@
       "groupName": "pg"
     },
     {
+      "description": "Hono + middleware/plugin ecosystem",
+      "matchPackageNames": ["hono", "/^@hono//"],
+      "groupName": "hono"
+    },
+    {
+      "description": "Preact core + plugins",
+      "matchPackageNames": ["preact", "/^@preact//"],
+      "groupName": "preact"
+    },
+    {
+      "description": "Cloudflare Workers toolchain — wrangler + workers-types + workers SDKs travel together",
+      "matchPackageNames": ["wrangler", "/^@cloudflare//", "miniflare"],
+      "groupName": "cloudflare-workers"
+    },
+    {
       "description": "Node + pnpm toolchain — engines, packageManager, .nvmrc, Dockerfile FROM all move in lockstep",
       "matchPackageNames": ["node", "pnpm"],
       "groupName": "toolchain-versions"
