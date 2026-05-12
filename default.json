@@ -49,9 +49,9 @@
       "pinDigests": true
     },
     {
-      "description": "docker-compose files use floating tags by design (dev convenience); disable so Renovate doesn't fight them",
+      "description": "docker-compose: bump tags but never pin digests — keeps compose files readable for humans editing them by hand",
       "matchManagers": ["docker-compose"],
-      "enabled": false
+      "pinDigests": false
     }
   ]
 }
