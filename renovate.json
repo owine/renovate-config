@@ -3,5 +3,15 @@
   "extends": [
     "local>owine/renovate-config",
     "local>owine/renovate-config:automerge"
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Keep the renovate npm package pinned in CI workflows up to date",
+      "managerFilePatterns": ["/^\\.github/workflows/.+\\.ya?ml$/"],
+      "matchStrings": ["renovate@(?<currentValue>[^\"'\\s]+)"],
+      "datasourceTemplate": "npm",
+      "depNameTemplate": "renovate"
+    }
   ]
 }
