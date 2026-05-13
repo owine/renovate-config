@@ -21,7 +21,7 @@
   "separateMultipleMajor": true,
   "prHourlyLimit": 0,
   "prConcurrentLimit": 0,
-  "minimumReleaseAge": "7 days",
+  "minimumReleaseAge": "3 days",
   "osvVulnerabilityAlerts": true,
   "dependencyDashboardOSVVulnerabilitySummary": "all",
   "vulnerabilityAlerts": {
@@ -37,9 +37,9 @@
   },
   "packageRules": [
     {
-      "description": "Major bumps — separate PR per package, 7-day soak, manual review required",
+      "description": "Major bumps — separate PR per package, 3-day soak (TEMP — restore to 7 days), manual review required",
       "matchUpdateTypes": ["major"],
-      "minimumReleaseAge": "7 days",
+      "minimumReleaseAge": "3 days",
       "automerge": false,
       "addLabels": ["major-update", "needs-review"]
     },
