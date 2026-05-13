@@ -25,16 +25,16 @@ Only extend the ecosystem presets a repo actually uses.
 
 | File | Purpose |
 |------|---------|
-| `default.json` | Baseline. Pinned ranges, 3-day soak, OSV alerts, GH Action digests, lockfile maintenance, weekly schedule. Major bumps separated with 7-day soak. |
+| `default.json` | Baseline. Pinned ranges, 7-day soak, OSV alerts, GH Action digests, lockfile maintenance, weekly schedule (Mondays, `America/Chicago`). Majors separated into their own PRs and held for manual review. |
 | `automerge.json` | Group all non-major updates into one PR, automerge once CI passes. Skip if you want hand-review of every patch. |
-| `node.json` | Node/TS peer-dep groupings: React, TanStack, Radix, Vite/Vitest, ESLint, Prisma, Auth.js, toolchain (node+pnpm). |
+| `node.json` | Node/TS peer-dep groupings: React, TanStack, Radix, Vite, Vitest+testcontainers, ESLint, Prisma, Auth.js, pg, Hono, Preact, Cloudflare Workers (wrangler/@cloudflare/miniflare), toolchain (node+pnpm). |
 | `python.json` | pep621 groupings: FastAPI stack, Pydantic, SQLAlchemy stack, pytest, lint/types tooling. |
 | `docker.json` | Dockerfile base bundling, GH Actions setup/artifact/docker families, runtime-major flags. |
 
 ## Supply-chain posture
 
 - **`rangeStrategy: pin`** — caret/tilde ranges become exact versions in `package.json`/`pyproject.toml`.
-- **`minimumReleaseAge: 3 days`** (7 for majors) — soak window so a yanked/compromised release is caught before it lands.
+- **`minimumReleaseAge: 7 days`** — soak window so a yanked/compromised release is caught before it lands (applies to majors too; they additionally require manual review).
 - **`vulnerabilityAlerts`** override — CVE fixes skip the soak and automerge.
 - **`helpers:pinGitHubActionDigests`** — every `uses:` resolves to a 40-char commit SHA.
 - **`pinDigests: true`** for Dockerfiles — base images pinned by `@sha256:` digest.
