@@ -52,6 +52,12 @@
       "description": "docker-compose: bump tags but never pin digests — keeps compose files readable for humans editing them by hand",
       "matchManagers": ["docker-compose"],
       "pinDigests": false
+    },
+    {
+      "description": "Node version pins use LTS-aware versioning — Renovate's 'node' versioning scheme tracks LTS lines (22, 24, 26, ...) and skips Current/odd-numbered releases (23, 25, 27, ...). LTS-to-LTS major bumps still come as separate manual-review PRs via the major-bump rule above.",
+      "matchPackageNames": ["node"],
+      "matchDatasources": ["docker", "node-version"],
+      "versioning": "node"
     }
   ]
 }
