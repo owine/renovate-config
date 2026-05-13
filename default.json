@@ -9,7 +9,7 @@
     ":semanticCommits"
   ],
   "timezone": "America/Chicago",
-  "schedule": ["before 6am on monday"],
+  "schedule": ["on monday"],
   "automergeSchedule": ["at any time"],
   "labels": ["dependencies"],
   "semanticCommitType": "deps",
@@ -32,7 +32,7 @@
   },
   "lockFileMaintenance": {
     "enabled": true,
-    "schedule": ["before 6am on monday"],
+    "schedule": ["on monday"],
     "automerge": true
   },
   "packageRules": [
