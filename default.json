@@ -59,5 +59,15 @@
       "matchDatasources": ["docker", "node-version"],
       "versioning": "node"
     }
+  ],
+  "customManagers": [
+    {
+      "description": "Bump version literals in GitHub Actions workflow files when annotated with a trailing `# renovate: datasource=X depName=Y` hint. Reaches places the github-actions manager can't natively — strategy.matrix arrays, run-step args, env defaults — without requiring per-repo regex config.",
+      "customType": "regex",
+      "managerFilePatterns": ["/^\\.github/workflows/[^/]+\\.ya?ml$/"],
+      "matchStrings": [
+        "['\"]?(?<currentValue>\\d+\\.\\d+\\.\\d+)['\"]?\\s*#\\s*renovate:\\s*datasource=(?<datasource>\\S+)\\s+depName=(?<depName>\\S+)"
+      ]
+    }
   ]
 }
