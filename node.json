@@ -71,6 +71,19 @@
       "description": "Node + pnpm toolchain — engines, packageManager, .nvmrc, Dockerfile FROM all move in lockstep",
       "matchPackageNames": ["node", "pnpm"],
       "groupName": "toolchain-versions"
+    },
+    {
+      "description": "Per-LTS-lane Node slots — workflow matrix entries annotated with `depName=node-lts-NN packageName=node` represent a specific LTS line and must not be major-bumped. Listed lanes cover current + near-future LTSs; add a new entry when a new LTS ships.",
+      "matchDepNames": ["node-lts-22"],
+      "allowedVersions": "<23"
+    },
+    {
+      "matchDepNames": ["node-lts-24"],
+      "allowedVersions": "<25"
+    },
+    {
+      "matchDepNames": ["node-lts-26"],
+      "allowedVersions": "<27"
     }
   ]
 }
