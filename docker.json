@@ -1,6 +1,9 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "description": "Docker + GitHub Actions hardening. Group base images, group common actions, flag runtime majors as breaking.",
+  "extends": [
+    "docker:enableMajor"
+  ],
   "packageRules": [
     {
       "description": "Dockerfile base images — group bumps + digest pins together",
