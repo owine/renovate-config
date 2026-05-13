@@ -1,0 +1,29 @@
+name: validate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  renovate-config-validator:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.5.0
+        with:
+          node-version: lts/*
+
+      - name: Validate Renovate presets
+        run: |
+          npx --yes --package "renovate@43.150.0" -- renovate-config-validator --strict \
+            renovate.json \
+            default.json \
+            automerge.json \
+            node.json \
+            python.json \
+            docker.json
