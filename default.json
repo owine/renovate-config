@@ -21,7 +21,9 @@
   "separateMultipleMajor": true,
   "prHourlyLimit": 0,
   "prConcurrentLimit": 0,
-  "minimumReleaseAge": "3 days",
+  // TEMP: minimumReleaseAge disabled while landing a Renovate PR backlog.
+  // Restore by uncommenting the line below (intended value: 7 days).
+  // "minimumReleaseAge": "7 days",
   "osvVulnerabilityAlerts": true,
   "dependencyDashboardOSVVulnerabilitySummary": "all",
   "vulnerabilityAlerts": {
@@ -37,9 +39,11 @@
   },
   "packageRules": [
     {
-      "description": "Major bumps — separate PR per package, 3-day soak (TEMP — restore to 7 days), manual review required",
+      // TEMP: major-bump minimumReleaseAge disabled while landing a Renovate PR backlog.
+      // Restore by uncommenting the line below (intended value: 7 days).
+      "description": "Major bumps — separate PR per package, manual review required",
       "matchUpdateTypes": ["major"],
-      "minimumReleaseAge": "3 days",
+      // "minimumReleaseAge": "7 days",
       "automerge": false,
       "addLabels": ["major-update", "needs-review"]
     },
