@@ -62,7 +62,7 @@
   ],
   "customManagers": [
     {
-      "description": "Bump version literals in GitHub Actions workflow files when annotated with a `# renovate: datasource=X depName=Y` hint. Supports both trailing-comment style (hint on same line, after value) and leading-comment style (hint on the line immediately above the value). Patterns use horizontal-whitespace classes ([ \\t]) instead of \\s so they can't cross-attribute a value to a hint belonging to a different block. Reaches places the github-actions manager can't natively — strategy.matrix arrays, run-step args, env defaults — without requiring per-repo regex config.",
+      "description": "Bump version literals in GitHub Actions workflows annotated with `# renovate: datasource=X depName=Y`. Supports trailing-comment (hint after value) and leading-comment (hint on line above value) styles. INVARIANT: inter-field separators must use `[ \\t]`, never `\\s` — `\\s` matches `\\n` and causes cross-block attribution (see PR #4). The two patterns share textually identical metadata-tail and value subpatterns; JSON has no interpolation and RE2 has no subpattern references, so edits must apply character-for-character to both. Reaches places the github-actions manager can't natively (matrix arrays, run-step args, env defaults).",
       "customType": "regex",
       "managerFilePatterns": ["/^\\.github/workflows/[^/]+\\.ya?ml$/"],
       "matchStrings": [
