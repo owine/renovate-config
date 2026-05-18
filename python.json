@@ -2,7 +2,6 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "description": "Python ecosystem groupings (pep621/uv/poetry). Peer-dep coupled stacks bundled together.",
   "pep621": { "enabled": true },
-  "pre-commit": { "enabled": true },
   "packageRules": [
     {
       "description": "FastAPI + ASGI stack (web layer)",

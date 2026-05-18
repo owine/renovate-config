@@ -15,6 +15,7 @@
   "semanticCommitType": "deps",
   "semanticCommitScope": null,
   "configMigration": true,
+  "pre-commit": { "enabled": true },
   "rebaseWhen": "behind-base-branch",
   "rangeStrategy": "pin",
   "separateMajorMinor": true,
