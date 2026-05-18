@@ -1,0 +1,21 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": "MCP server repos. Isolate the MCP SDK for manual review and keep engines.node unpinned so library consumers keep a broad range. Extend AFTER node.json.",
+  "packageRules": [
+    {
+      "description": "MCP SDK — review every bump manually. Carved out of the non-major automerge bundle and uses `feat:` prefix so a minor SDK bump triggers a minor release-please bump.",
+      "matchPackageNames": ["@modelcontextprotocol/sdk"],
+      "groupName": "mcp-sdk",
+      "semanticCommitType": "feat",
+      "automerge": false,
+      "addLabels": ["needs-review"]
+    },
+    {
+      "description": "Don't pin engines.node — this is a library and the engines range must stay broad for consumers. Overrides the node preset's default pin behavior.",
+      "matchManagers": ["npm"],
+      "matchDepTypes": ["engines"],
+      "matchPackageNames": ["node"],
+      "enabled": false
+    }
+  ]
+}
