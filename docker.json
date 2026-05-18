@@ -1,6 +1,6 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "description": "Docker + GitHub Actions hardening. Group base images, group common actions, flag runtime majors as breaking.",
+  "description": "Docker + GitHub Actions hardening. Group base images, group common actions, flag runtime majors as breaking, track version-pinned global npm installs in Dockerfiles.",
   "extends": [
     "docker:enableMajor"
   ],
@@ -53,6 +53,19 @@
       ],
       "matchUpdateTypes": ["major"],
       "addLabels": ["breaking", "needs-review"]
+    }
+  ],
+  "customManagers": [
+    {
+      "description": "Bump version-pinned global npm installs in Dockerfiles: a `# renovate: datasource=X depName=Y` hint comment immediately followed by `RUN npm install -g pkg@VERSION`. Renovate's native dockerfile manager only sees FROM lines, so this reaches global tool installs (serve, pnpm, etc.). INVARIANT: inter-field separators use `[ \\t]`, never `\\s` — `\\s` matches `\\n` and cross-attributes fields across blocks (same hazard as the workflow custom manager in default.json).",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/(^|/)Dockerfile[^/]*$/"
+      ],
+      "matchStrings": [
+        "#[ \\t]*renovate:[ \\t]*datasource=(?<datasource>\\S+)[ \\t]+depName=(?<depName>\\S+)(?:[ \\t]+packageName=(?<packageName>\\S+))?(?:[ \\t]+versioning=(?<versioning>\\S+))?[ \\t]*\\nRUN[ \\t]+npm[ \\t]+install[ \\t]+-g[ \\t]+\\S+@(?<currentValue>\\S+)"
+      ],
+      "versioningTemplate": "{{#if versioning}}{{versioning}}{{else}}npm{{/if}}"
     }
   ]
 }
