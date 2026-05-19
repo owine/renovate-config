@@ -21,7 +21,7 @@ In any repo's `renovate.json`:
 }
 ```
 
-Only extend the ecosystem presets a repo actually uses. Extend `:mcp` *after* `:node`, and `:alpine` *after* `:automerge`.
+Only extend the ecosystem presets a repo actually uses. Extend `:mcp` *after* `:node`, and `:alpine` last — after `:automerge` and every other ecosystem preset.
 
 ## Presets
 
@@ -65,7 +65,7 @@ Only extend the ecosystem presets a repo actually uses. Extend `:mcp` *after* `:
   }
   ```
 
-  Adjust `managerFilePatterns` to match your Dockerfile's path (the example matches any file ending in `Dockerfile`).
+  Adjust `managerFilePatterns` to match your Dockerfile's path (the example matches any file ending in `Dockerfile`). The `\s\s` anchor in `matchStrings` assumes apk pins are indented by exactly two spaces (typical of a line-continued `RUN apk add` block); widen it to `\s+` or anchor on `RUN apk add` if your Dockerfile uses a different style, or the pins will be silently skipped.
 
 - **The Alpine version in `depNameTemplate` is repo-specific and unmanaged.**
   When a repo bumps its Alpine base image (e.g. `3.23` → `3.24`), it must
