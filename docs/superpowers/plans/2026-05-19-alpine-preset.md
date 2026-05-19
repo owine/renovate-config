@@ -193,7 +193,11 @@ Expected: exit 0, all files validated successfully.
 
 ```bash
 git status --porcelain   # expected: empty
-git log --oneline -3     # expected: docs commit, feat commit, spec commit
+git log --oneline -5     # sanity check: the two new commits from Tasks 1 & 2
+                         # (feat: add alpine apk preset / docs: document alpine
+                         # preset and consumer caveats) are present and on top.
+                         # The surrounding spec/plan commits are illustrative,
+                         # not a hard gate.
 ```
 
 - [ ] **Step 3: Done.** Hand off to finishing-a-development-branch for PR/merge decision. Mention to the maintainer the out-of-scope observation that `mcp.json` is absent from `validate.yml`'s validator list.
