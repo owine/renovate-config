@@ -29,4 +29,5 @@ jobs:
             automerge.json \
             node.json \
             python.json \
-            docker.json
+            docker.json \
+            alpine.json
