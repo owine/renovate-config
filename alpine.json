@@ -1,0 +1,16 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": "Alpine apk packages (Repology datasource). Routine apk pins are low-risk and benefit from fast turnaround: own group, no release soak, runs any time, automerges non-major. Carved out of automerge.json's bundle. Extend AFTER automerge.json. Major bumps still fall through to default.json's manual-review rule.",
+  "packageRules": [
+    {
+      "description": "Group all Repology (Alpine apk) pins, skip the soak, run off-schedule, automerge non-major",
+      "matchDatasources": ["repology"],
+      "matchUpdateTypes": ["patch", "minor", "pin", "digest"],
+      "groupName": "alpine packages",
+      "minimumReleaseAge": "0 days",
+      "schedule": ["at any time"],
+      "automerge": true,
+      "automergeType": "pr"
+    }
+  ]
+}
