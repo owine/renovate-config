@@ -30,4 +30,5 @@ jobs:
             node.json \
             python.json \
             docker.json \
+            mcp.json \
             alpine.json
