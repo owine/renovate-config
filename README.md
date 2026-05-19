@@ -65,6 +65,8 @@ Only extend the ecosystem presets a repo actually uses. Extend `:mcp` *after* `:
   }
   ```
 
+  Adjust `managerFilePatterns` to match your Dockerfile's path (the example matches any file ending in `Dockerfile`).
+
 - **The Alpine version in `depNameTemplate` is repo-specific and unmanaged.**
   When a repo bumps its Alpine base image (e.g. `3.23` → `3.24`), it must
   hand-edit `alpine_3_23/` → `alpine_3_24/` in its own customManager, or
