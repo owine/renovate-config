@@ -66,6 +66,30 @@
         "#[ \\t]*renovate:[ \\t]*datasource=(?<datasource>\\S+)[ \\t]+depName=(?<depName>\\S+)(?:[ \\t]+packageName=(?<packageName>\\S+))?(?:[ \\t]+versioning=(?<versioning>\\S+))?[ \\t]*\\nRUN[ \\t]+npm[ \\t]+install[ \\t]+-g[ \\t]+\\S+@(?<currentValue>\\S+)"
       ],
       "versioningTemplate": "{{#if versioning}}{{versioning}}{{else}}npm{{/if}}"
+    },
+    {
+      "description": "Track Dockerfile `ARG PNPM_VERSION=…` against the npm `pnpm` package so corepack stays in lockstep with `package.json:packageManager`. Without this, Renovate bumps the npm side, the Dockerfile drifts, and pnpm ≥11 hits ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY when corepack tries a runtime install. Intentionally narrow: only the `ARG PNPM_VERSION=<value>` shape — `ENV …`, `RUN npm i -g pnpm@…`, and bare `corepack prepare pnpm@… --activate` are handled by the customManager above or fall outside scope. Folds into the `toolchain-versions` group in node.json via depName.",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/(^|/)Dockerfile[^/]*$/"
+      ],
+      "matchStrings": [
+        "ARG[ \\t]+PNPM_VERSION=(?<currentValue>\\S+)"
+      ],
+      "datasourceTemplate": "npm",
+      "depNameTemplate": "pnpm"
+    },
+    {
+      "description": "Track Dockerfile `ARG YARN_VERSION=…` against the npm `yarn` package. Same corepack drift hazard as pnpm; symmetric solution.",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/(^|/)Dockerfile[^/]*$/"
+      ],
+      "matchStrings": [
+        "ARG[ \\t]+YARN_VERSION=(?<currentValue>\\S+)"
+      ],
+      "datasourceTemplate": "npm",
+      "depNameTemplate": "yarn"
     }
   ]
 }
