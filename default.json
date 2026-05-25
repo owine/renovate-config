@@ -16,7 +16,7 @@
   "semanticCommitScope": null,
   "configMigration": true,
   "pre-commit": { "enabled": true },
-  "rebaseWhen": "behind-base-branch",
+  "rebaseWhen": "auto",
   "rangeStrategy": "pin",
   "separateMajorMinor": true,
   "separateMultipleMajor": true,
