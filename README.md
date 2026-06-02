@@ -39,7 +39,10 @@ Only extend the ecosystem presets a repo actually uses. Extend `:mcp` *after* `:
 
 - **`rangeStrategy: pin`** — caret/tilde ranges become exact versions in `package.json`/`pyproject.toml`.
 - **`minimumReleaseAge: 3 days`** baseline (majors: 7 days) — soak window so a yanked/compromised release is caught before it lands; majors additionally require manual review.
-- **`minimumReleaseAgeBehaviour: timestamp-optional`** — Renovate 42's default (`timestamp-required`) marks any release lacking a publish timestamp as *pending forever*, which permanently freezes Docker updates from registries that don't expose timestamps (GHCR, Quay, mcr.microsoft.com, most private registries) under the soak above. `timestamp-optional` treats a timestamp-less release as stable instead — Docker Hub (and npm/PyPI/etc.) still get the real soak; timestamp-less registries skip it (they can't be soaked either way, so the choice is *flow* vs *deadlock*).
+- **`minimumReleaseAgeBehaviour: timestamp-optional`** — a timestamp-less release is treated as stable rather than held by the soak above.
+  - Renovate 42's default (`timestamp-required`) marks any release lacking a publish timestamp as *pending indefinitely*.
+  - Combined with the soak, that permanently freezes Docker updates from registries that don't expose timestamps: GHCR, Quay, `mcr.microsoft.com`, most private/Artifactory registries.
+  - Docker Hub (and npm/PyPI/crates.io/etc.) still get the real soak — they provide timestamps. Timestamp-less registries skip it (they can't be soaked either way, so the choice is *flow* vs *deadlock*).
 - **`vulnerabilityAlerts`** override — CVE fixes skip the soak and automerge.
 - **`helpers:pinGitHubActionDigests`** — every `uses:` resolves to a 40-char commit SHA.
 - **`pinDigests: true`** for Dockerfiles — base images pinned by `@sha256:` digest.
