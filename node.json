@@ -2,8 +2,8 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "description": "Node/TypeScript ecosystem groupings — peer-dep coupled families that must move together.",
   "toolSettings": {
-    "description": "Cap (MB) for the pnpm/yarn child process Renovate spawns to refresh lockfiles — the usual OOM culprit on Mend-hosted, where NODE_OPTIONS can't be set. 2048 ≈ 2.0GiB; Mend imposes no max beyond the plan, so raise toward that ceiling if runs still OOM. Requires renovate ≥ the version pinned in validate.yml. https://docs.renovatebot.com/mend-hosted/faq/",
-    "nodeMaxMemory": 2048
+    "description": "Cap (MB) for the pnpm/yarn child process Renovate spawns to refresh lockfiles — the usual OOM culprit on Mend-hosted, where NODE_OPTIONS can't be set. 1536 ≈ 1.5GiB; Mend imposes no max beyond the plan, so raise toward that ceiling if runs still OOM. Requires renovate ≥ the version pinned in validate.yml. https://docs.renovatebot.com/mend-hosted/faq/",
+    "nodeMaxMemory": 1536
   },
   "packageRules": [
     {
