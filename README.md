@@ -21,7 +21,7 @@ In any repo's `renovate.json`:
 }
 ```
 
-Only extend the ecosystem presets a repo actually uses. Extend `:mcp` *after* `:node`, and `:alpine` last — after `:automerge` and every other ecosystem preset.
+Only extend the ecosystem presets a repo actually uses. Extend `:mcp` *after* `:node`, and `:alpine` / `:home-assistant` last — after `:automerge`, `:docker`, and every other ecosystem preset.
 
 ## Presets
 
@@ -34,6 +34,7 @@ Only extend the ecosystem presets a repo actually uses. Extend `:mcp` *after* `:
 | `docker.json` | Dockerfile base bundling, GH Actions setup/artifact/docker families, runtime-major flags. |
 | `mcp.json` | MCP server repos: isolate `@modelcontextprotocol/sdk` for manual review (`feat:` prefix), keep `engines.node` unpinned for library consumers. Extend after `node.json`. |
 | `alpine.json` | Alpine updates. apk pins (Repology datasource): own group, 0-day soak, runs any time, **automerges patch/pin/digest; minor needs review**. Also gates **alpine base-image (`docker`) minor bumps** to manual review (the base-image patch line automerges). Carved out of `automerge.json`'s bundle — extend after it (and after `docker.json`). **Requires a consumer-side customManager** (see Consumer notes). |
+| `home-assistant.json` | Home Assistant add-on repos. Pins the HA base image (`ghcr.io/home-assistant/base`) to a versioned tag + digest and gates its **minor bumps** to manual review (the tag *is* the Alpine line, so a bump means hand-editing the repology `alpine_X_Y/` template); digest rebuilds automerge. Adds CalVer versioning for the `home-assistant/builder` action. Extend after `:automerge`/`:docker` (and `:alpine` if used). |
 
 ## Supply-chain posture
 
@@ -82,12 +83,20 @@ Only extend the ecosystem presets a repo actually uses. Extend `:mcp` *after* `:
   bumps stay within the line, leave the template valid, and automerge normally.
 
 - **Preset ordering is load-bearing.** Compose as: `default` → `automerge` →
-  ecosystem presets → `mcp` (after `node`) → `alpine` (after `automerge` **and
-  `docker`**). Renovate applies `packageRules` in order and the last match wins;
-  each later preset peels its packages out of the prior catch-all group. Wrong
-  order leaves packages mis-grouped (e.g. apk pins stuck in the generic
-  non-major automerge bundle, or the alpine base-image minor gate losing to
-  `docker.json`'s "dockerfile bases" group / `automerge.json`'s bundle).
+  ecosystem presets → `mcp` (after `node`) → `alpine` / `home-assistant` (after
+  `automerge` **and `docker`**). Renovate applies `packageRules` in order and the
+  last match wins; each later preset peels its packages out of the prior
+  catch-all group. Wrong order leaves packages mis-grouped (e.g. apk pins stuck
+  in the generic non-major automerge bundle, or the alpine / HA base-image minor
+  gate losing to `docker.json`'s "dockerfile bases" group / `automerge.json`'s
+  bundle).
+
+- **`home-assistant.json` is opt-in for HA add-on repos.** It pins
+  `ghcr.io/home-assistant/base` (tag + digest) and gates its `minor` bumps to
+  manual review for the same reason as the alpine base image: the HA base tag
+  *is* the Alpine release line, so a bump forces the `alpine_X_Y/`
+  `depNameTemplate` hand-edit. It also gives the `home-assistant/builder` action
+  CalVer (`YYYY.MM.PATCH`) versioning. Extend it late, after `:docker`.
 
 - **Major apk bumps fall through to `default.json`.** `alpine.json`'s apk rules
   match only `patch`/`pin`/`digest` (automerge) and `minor` (review), so a major
