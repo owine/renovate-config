@@ -4,7 +4,7 @@
   "packageRules": [
     {
       "description": "Bundle every non-major update into a single weekly PR and automerge once CI passes",
-      "matchUpdateTypes": ["patch", "minor", "pin", "digest", "pinDigest", "lockFileMaintenance"],
+      "matchUpdateTypes": ["patch", "minor", "pin", "digest", "pinDigest"],
       "groupName": "all non-major dependencies",
       "automerge": true,
       "automergeType": "pr"
