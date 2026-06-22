@@ -3,7 +3,7 @@
   "description": "Grouped automerge for all non-major updates. Extend AFTER default.json. Skip in repos that need stricter review.",
   "packageRules": [
     {
-      "description": "Bundle every non-major update into a single weekly PR and automerge once CI passes",
+      "description": "Bundle every non-major update into a single weekly PR and automerge once CI passes. Do NOT add lockFileMaintenance here: it is repo-wide (no package/datasource), so this groupName would concatenate onto its title ('lock file maintenance all non-major dependencies') and force it onto this shared weekly branch despite its own mon/wed/fri/sun schedule. It already automerges standalone via default.json's lockFileMaintenance block.",
       "matchUpdateTypes": ["patch", "minor", "pin", "digest", "pinDigest"],
       "groupName": "all non-major dependencies",
       "automerge": true,
