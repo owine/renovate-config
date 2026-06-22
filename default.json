@@ -30,11 +30,12 @@
     "labels": ["security"],
     "minimumReleaseAge": "0 days",
     "schedule": ["at any time"],
-    "automerge": true
+    "automerge": true,
+    "groupName": "security updates"
   },
   "lockFileMaintenance": {
     "enabled": true,
-    "schedule": ["on monday"],
+    "schedule": ["on monday, wednesday, friday and sunday"],
     "minimumReleaseAge": "0 days",
     "automerge": true
   },
