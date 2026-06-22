@@ -23,7 +23,7 @@
       "addLabels": ["needs-review"]
     },
     {
-      "description": "Alpine base image (docker datasource) minor bumps cross release lines, which requires hand-editing the consumer's repology depNameTemplate (alpine_X_Y/). Gate to manual review; never automerge. Patch base bumps stay in-line and ride docker.json's 'dockerfile bases' group + the non-major bundle.",
+      "description": "Alpine base image (docker datasource) minor bumps cross release lines, which requires hand-editing the consumer's repology depNameTemplate (alpine_X_Y/). Gate ONLY these to manual review; never automerge. Patch bumps and digest-only rebuilds stay in-line (template still valid) and ride docker.json's 'dockerfile bases' group + automerge.json's non-major bundle.",
       "matchDatasources": ["docker"],
       "matchPackageNames": ["alpine"],
       "matchUpdateTypes": ["minor"],

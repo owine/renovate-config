@@ -82,11 +82,12 @@ Only extend the ecosystem presets a repo actually uses. Extend `:mcp` *after* `:
   bumps stay within the line, leave the template valid, and automerge normally.
 
 - **Preset ordering is load-bearing.** Compose as: `default` → `automerge` →
-  ecosystem presets → `mcp` (after `node`) → `alpine` (after `automerge`).
-  Renovate applies `packageRules` in order and the last match wins; each later
-  preset peels its packages out of the prior catch-all group. Wrong order
-  leaves packages mis-grouped (e.g. apk pins stuck in the generic non-major
-  automerge bundle).
+  ecosystem presets → `mcp` (after `node`) → `alpine` (after `automerge` **and
+  `docker`**). Renovate applies `packageRules` in order and the last match wins;
+  each later preset peels its packages out of the prior catch-all group. Wrong
+  order leaves packages mis-grouped (e.g. apk pins stuck in the generic
+  non-major automerge bundle, or the alpine base-image minor gate losing to
+  `docker.json`'s "dockerfile bases" group / `automerge.json`'s bundle).
 
 - **Major apk bumps fall through to `default.json`.** `alpine.json`'s apk rules
   match only `patch`/`pin`/`digest` (automerge) and `minor` (review), so a major
