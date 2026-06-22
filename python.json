@@ -57,13 +57,13 @@
   ],
   "customManagers": [
     {
-      "description": "Track an EXACT-pinned `requires-python = \"==X.Y.Z\"` in pyproject.toml against the CPython runtime (datasource `python-version`, depName `python`) so it bumps in lockstep with the `python` Docker base image. Anchored to the `==`-triple form only: floor ranges (`>=3.10`), compatible ranges (`~=3.14`), and wildcard pins (`==3.14.*`) do NOT match, so non-exact-pin consumers are a no-op. The `==` is literal context outside the capture; only the `X.Y.Z` triple is replaced. uv.lock's own `requires-python` may lag this edit until lockfile maintenance reconciles it — pair with a `UV_PYTHON_DOWNLOADS=never` build guard.",
+      "description": "Track an EXACT-pinned `requires-python = \"==X.Y.Z\"` in pyproject.toml against the CPython runtime (datasource `python-version`, depName `python`) so it bumps in lockstep with the `python` Docker base image. Tolerant of formatting: single OR double TOML quotes and optional whitespace around `=`/`==` all match; a trailing inline comment after the closing quote is unaffected since the match ends at the quote. Anchored to the `==`-triple form only: floor ranges (`>=3.10`), compatible ranges (`~=3.14`), and wildcard pins (`==3.14.*`) do NOT match, so non-exact-pin consumers are a no-op. The `==` is literal context outside the capture; only the `X.Y.Z` triple is replaced. CONFLICT RESOLUTION: if the system Python ever fails to satisfy this exact pin, uv silently falls back to a uv-managed standalone interpreter (unreachable by a non-root runtime user) — consumers MUST set `UV_PYTHON_DOWNLOADS=never` so that mismatch fails the build loudly instead. uv.lock's own `requires-python` may lag this edit until lockfile maintenance reconciles it.",
       "customType": "regex",
       "managerFilePatterns": [
         "/(^|/)pyproject\\.toml$/"
       ],
       "matchStrings": [
-        "requires-python[ \\t]*=[ \\t]*\"==(?<currentValue>\\d+\\.\\d+\\.\\d+)\""
+        "requires-python[ \\t]*=[ \\t]*['\"]==[ \\t]*(?<currentValue>\\d+\\.\\d+\\.\\d+)['\"]"
       ],
       "datasourceTemplate": "python-version",
       "depNameTemplate": "python",
