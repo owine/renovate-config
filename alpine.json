@@ -1,16 +1,35 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "description": "Alpine apk packages (Repology datasource). Routine apk pins are low-risk and benefit from fast turnaround: own group, no release soak, runs any time, automerges non-major. Carved out of automerge.json's bundle. Extend AFTER automerge.json. Major bumps still fall through to default.json's manual-review rule.",
+  "description": "Alpine updates. (1) Repology apk pins: patch/pin/digest get their own group, no soak, run any time, automerge; minor apk bumps are grouped separately and require manual review. (2) Alpine base image (docker datasource): minor bumps cross release lines and require hand-editing the consumer's repology depNameTemplate (alpine_X_Y/), so they are gated to manual review; patch base bumps stay in-line and automerge via docker.json's bundle. Extend AFTER automerge.json and docker.json. Major bumps fall through to default.json's manual-review rule.",
   "packageRules": [
     {
-      "description": "Group all Repology (Alpine apk) pins, skip the soak, run off-schedule, automerge non-major",
+      "description": "Repology (Alpine apk) patch/pin/digest pins: own group, skip the soak, run off-schedule, automerge",
       "matchDatasources": ["repology"],
-      "matchUpdateTypes": ["patch", "minor", "pin", "digest"],
+      "matchUpdateTypes": ["patch", "pin", "digest"],
       "groupName": "alpine packages",
       "minimumReleaseAge": "0 days",
       "schedule": ["at any time"],
       "automerge": true,
       "automergeType": "pr"
+    },
+    {
+      "description": "Repology (Alpine apk) minor bumps: separate group, manual review. Explicit automerge:false overrides automerge.json's non-major bundle (loaded earlier) so apk minor updates don't automerge.",
+      "matchDatasources": ["repology"],
+      "matchUpdateTypes": ["minor"],
+      "groupName": "alpine packages (minor)",
+      "minimumReleaseAge": "0 days",
+      "schedule": ["at any time"],
+      "automerge": false,
+      "addLabels": ["needs-review"]
+    },
+    {
+      "description": "Alpine base image (docker datasource) minor bumps cross release lines, which requires hand-editing the consumer's repology depNameTemplate (alpine_X_Y/). Gate to manual review; never automerge. Patch base bumps stay in-line and ride docker.json's 'dockerfile bases' group + the non-major bundle.",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["alpine"],
+      "matchUpdateTypes": ["minor"],
+      "groupName": "alpine base image",
+      "automerge": false,
+      "addLabels": ["needs-review"]
     }
   ]
 }
