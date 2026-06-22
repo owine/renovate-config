@@ -44,10 +44,30 @@
       "groupName": "lint + types tooling"
     },
     {
-      "description": "Don't track `python` in pep621 — `requires-python` is a min-version metadata range, not a runtime pin",
+      "description": "Don't track `python` via the native pep621 manager — `requires-python` is normally a min-version metadata range (`>=3.10`), not a runtime pin, so the pep621 view of it must not bump. Exact `==X.Y.Z` pins ARE tracked, but via the custom manager below + the `python-version` datasource, which surfaces a separate `python` dep that this rule does not touch.",
       "matchManagers": ["pep621"],
       "matchDepNames": ["python"],
       "enabled": false
+    },
+    {
+      "description": "Group the exact-pinned `requires-python` (custom manager below, depName `python`) into the same PR as the `python` Docker base image (dockerfile manager, also depName `python`) so an exact CPython pin and its base image never bump separately and drift apart.",
+      "matchPackageNames": ["python"],
+      "groupName": "python runtime"
+    }
+  ],
+  "customManagers": [
+    {
+      "description": "Track an EXACT-pinned `requires-python = \"==X.Y.Z\"` in pyproject.toml against the CPython runtime (datasource `python-version`, depName `python`) so it bumps in lockstep with the `python` Docker base image. Anchored to the `==`-triple form only: floor ranges (`>=3.10`), compatible ranges (`~=3.14`), and wildcard pins (`==3.14.*`) do NOT match, so non-exact-pin consumers are a no-op. The `==` is literal context outside the capture; only the `X.Y.Z` triple is replaced. uv.lock's own `requires-python` may lag this edit until lockfile maintenance reconciles it — pair with a `UV_PYTHON_DOWNLOADS=never` build guard.",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/(^|/)pyproject\\.toml$/"
+      ],
+      "matchStrings": [
+        "requires-python[ \\t]*=[ \\t]*\"==(?<currentValue>\\d+\\.\\d+\\.\\d+)\""
+      ],
+      "datasourceTemplate": "python-version",
+      "depNameTemplate": "python",
+      "versioningTemplate": "python"
     }
   ]
 }
