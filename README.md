@@ -33,7 +33,7 @@ Only extend the ecosystem presets a repo actually uses. Extend `:mcp` *after* `:
 | `python.json` | pep621 groupings: FastAPI stack, Pydantic, SQLAlchemy stack, pytest, lint/types tooling. |
 | `docker.json` | Dockerfile base bundling, GH Actions setup/artifact/docker families, runtime-major flags. |
 | `mcp.json` | MCP server repos: isolate `@modelcontextprotocol/sdk` for manual review (`feat:` prefix), keep `engines.node` unpinned for library consumers. Extend after `node.json`. |
-| `alpine.json` | Alpine apk packages (Repology datasource): own group, 0-day soak, runs any time, automerges non-major. Carved out of `automerge.json`'s bundle — extend after it. **Requires a consumer-side customManager** (see Consumer notes). |
+| `alpine.json` | Alpine updates. apk pins (Repology datasource): own group, 0-day soak, runs any time, **automerges patch/pin/digest; minor needs review**. Also gates **alpine base-image (`docker`) minor bumps** to manual review (the base-image patch line automerges). Carved out of `automerge.json`'s bundle — extend after it (and after `docker.json`). **Requires a consumer-side customManager** (see Consumer notes). |
 
 ## Supply-chain posture
 
@@ -76,15 +76,21 @@ Only extend the ecosystem presets a repo actually uses. Extend `:mcp` *after* `:
   hand-edit `alpine_3_23/` → `alpine_3_24/` in its own customManager, or
   Repology lookups silently return zero updates. This repo-specific knob is
   exactly why the customManager is **not** shipped in the shared preset.
+  To protect this coupling, `alpine.json` gates **base-image `minor` bumps**
+  (`datasource: docker`, `packageName: alpine`) to manual review — they're the
+  ones that cross release lines and demand the hand-edit. Base-image `patch`
+  bumps stay within the line, leave the template valid, and automerge normally.
 
 - **Preset ordering is load-bearing.** Compose as: `default` → `automerge` →
-  ecosystem presets → `mcp` (after `node`) → `alpine` (after `automerge`).
-  Renovate applies `packageRules` in order and the last match wins; each later
-  preset peels its packages out of the prior catch-all group. Wrong order
-  leaves packages mis-grouped (e.g. apk pins stuck in the generic non-major
-  automerge bundle).
+  ecosystem presets → `mcp` (after `node`) → `alpine` (after `automerge` **and
+  `docker`**). Renovate applies `packageRules` in order and the last match wins;
+  each later preset peels its packages out of the prior catch-all group. Wrong
+  order leaves packages mis-grouped (e.g. apk pins stuck in the generic
+  non-major automerge bundle, or the alpine base-image minor gate losing to
+  `docker.json`'s "dockerfile bases" group / `automerge.json`'s bundle).
 
-- **Major apk bumps fall through to `default.json`.** `alpine.json` matches
-  only `patch`/`minor`/`pin`/`digest`, so a major bump is handled by the
-  baseline major rule (7-day soak, `automerge: false`, `needs-review`). Rare in
-  practice — Repology seldom classifies an apk bump as major.
+- **Major apk bumps fall through to `default.json`.** `alpine.json`'s apk rules
+  match only `patch`/`pin`/`digest` (automerge) and `minor` (review), so a major
+  bump is handled by the baseline major rule (7-day soak, `automerge: false`,
+  `needs-review`). Rare in practice — Repology seldom classifies an apk bump as
+  major.
