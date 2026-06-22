@@ -36,4 +36,5 @@ jobs:
             python.json \
             docker.json \
             mcp.json \
-            alpine.json
+            alpine.json \
+            home-assistant.json
