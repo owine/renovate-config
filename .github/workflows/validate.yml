@@ -19,7 +19,7 @@ jobs:
     # User=12021 in the image would block actions/checkout writing the
     # workspace, so run the job container as root.
     container:
-      image: ghcr.io/renovatebot/renovate:43.235.2@sha256:0c7e6b5b88535aeb33e1cd19805a5204766da6b1665df2c8df2f332cfaecfb7b
+      image: ghcr.io/renovatebot/renovate:43.247.1@sha256:5775ae52404e86e87a892b772145b015832c7b01e6075bb1fda43adb4e4eec86
       options: --user root
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
