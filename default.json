@@ -31,6 +31,7 @@
     "minimumReleaseAge": "0 days",
     "schedule": ["at any time"],
     "automerge": true,
+    "semanticCommitType": "fix",
     "groupName": "security updates"
   },
   "lockFileMaintenance": {
@@ -41,10 +42,16 @@
   },
   "packageRules": [
     {
-      "description": "Major bumps — separate PR per package, 7-day soak, manual review required",
+      "description": "Reclaim `deps:` as the baseline commit type. The top-level `semanticCommitType: deps` above is INERT on its own: Renovate ships two built-in default packageRules — `{matchPackageNames:['*'] => chore}` and `{matchDepTypes:['dependencies','require'] => fix}` — and packageRules ALWAYS beat top-level config, so without this override every bump commits as `chore:` (npm prod deps as `fix:`). That matters because release-please treats `chore:` as a HIDDEN, non-releasing type: Dockerfile/Actions/apk repos would cut zero releases and add nothing to the changelog. This catch-all re-forces `deps:` for every package (release-please recognizes `deps` as a releasable unit => patch, in a dedicated Dependencies changelog section). Ordered FIRST so the more specific rules below/after still win where they match: major => feat (next rule), security => fix (vulnerabilityAlerts, force), and hand-picked consumer deps => feat (e.g. mcp.json's SDK rule).",
+      "matchPackageNames": ["*"],
+      "semanticCommitType": "deps"
+    },
+    {
+      "description": "Major bumps — separate PR per package, 7-day soak, manual review required. Typed `feat:` (not the baseline `deps:`) so release-please cuts a MINOR release in consumers: a dependency crossing a major line is notable enough to surface in the changelog's Features section, above routine `deps:` patch churn. Safe to type per-rule because default.json's separateMajorMinor/separateMultipleMajor isolate every major onto its own branch — one major per PR, no mixed-type commit. NOT typed `feat!:`/breaking: an upstream major is not automatically the consumer's breaking change.",
       "matchUpdateTypes": ["major"],
       "minimumReleaseAge": "7 days",
       "automerge": false,
+      "semanticCommitType": "feat",
       "addLabels": ["major-update", "needs-review"]
     },
     {

@@ -3,7 +3,7 @@
   "description": "MCP server repos. Isolate the MCP SDK for manual review and keep engines.node unpinned so library consumers keep a broad range. Extend AFTER node.json.",
   "packageRules": [
     {
-      "description": "MCP SDK — review every bump manually. Carved out of the non-major automerge bundle and uses `feat:` prefix so a minor SDK bump triggers a minor release-please bump.",
+      "description": "MCP SDK — review every bump manually. Carved out of the non-major automerge bundle and typed `feat:` so a minor SDK bump triggers a MINOR release-please bump in consumers. This is the fleet's 'hand-picked consumer-facing dependency' opt-in: default.json types routine bumps `deps:` (patch) and majors `feat:` (minor), but a minor SDK bump expands capability this server re-exposes, so it warrants `feat:` on its own. Add a rule like this in any repo where a specific dependency's minor bumps are consumer-facing.",
       "matchPackageNames": ["@modelcontextprotocol/sdk"],
       "groupName": "mcp-sdk",
       "semanticCommitType": "feat",
