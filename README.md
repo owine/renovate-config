@@ -36,6 +36,21 @@ Only extend the ecosystem presets a repo actually uses. Extend `:mcp` *after* `:
 | `alpine.json` | Alpine updates. apk pins (Repology datasource): own group, 0-day soak, runs any time, **automerges patch/pin/digest; minor needs review**. Also gates **alpine base-image (`docker`) minor bumps** to manual review (the base-image patch line automerges). Carved out of `automerge.json`'s bundle — extend after it (and after `docker.json`). **Requires a consumer-side customManager** (see Consumer notes). |
 | `home-assistant.json` | Home Assistant add-on repos. Pins the HA base image (`ghcr.io/home-assistant/base`) to a versioned tag + digest and gates its **minor bumps** to manual review (the tag *is* the Alpine line, so a bump means hand-editing the repology `alpine_X_Y/` template); digest rebuilds automerge. Adds CalVer versioning for the `home-assistant/builder` action. Extend after `:automerge`/`:docker` (and `:alpine` if used). |
 
+## Commit types & release-please
+
+These presets are tuned for consumer repos running [release-please](https://github.com/googleapis/release-please), which parses the Conventional Commit **type** to decide releases: `feat` → minor, `fix`/`deps` → patch, `chore` → **hidden, no release**.
+
+Renovate ships built-in default `packageRules` that type every bump `chore:` (npm production deps `fix:`), and `packageRules` always beat top-level config — so a bare `semanticCommitType` is inert and Dockerfile/Actions/apk repos would get **no release-please releases at all**. `default.json` reclaims the types via `packageRules`:
+
+| Update | Commit type | release-please effect |
+|--------|-------------|-----------------------|
+| patch / minor / pin / digest | `deps:` | patch → *Dependencies* section |
+| major | `feat:` | minor → *Features* section |
+| security (`vulnerabilityAlerts`) | `fix:` | patch → *Bug Fixes* section |
+| hand-picked consumer dep (e.g. `mcp.json`'s `@modelcontextprotocol/sdk`) | `feat:` | minor → *Features* section |
+
+Rule precedence (last match wins) is: catch-all `*` → `deps` → `major` → `feat` → security `fix` (forced) → any per-repo `feat` opt-in. A repo where a specific dependency's *minor* bumps are consumer-facing can add its own `{ "matchPackageNames": [...], "semanticCommitType": "feat" }` rule — see `mcp.json`.
+
 ## Supply-chain posture
 
 - **`rangeStrategy: pin`** — caret/tilde ranges become exact versions in `package.json`/`pyproject.toml`.
