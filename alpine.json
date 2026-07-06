@@ -1,26 +1,22 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "description": "Alpine updates. (1) Repology apk pins: patch/pin/digest get their own group, no soak, run any time, automerge; minor apk bumps are grouped separately and require manual review. (2) Alpine base image (docker datasource): minor bumps cross release lines and require hand-editing the consumer's repology depNameTemplate (alpine_X_Y/), so they are gated to manual review; patch base bumps stay in-line and automerge via docker.json's bundle. Extend AFTER automerge.json and docker.json. Major bumps fall through to default.json's manual-review rule.",
+  "description": "Alpine updates. (1) Repology apk pins: ALL non-major apk bumps (patch/pin/digest/minor) share ONE 'alpine packages' group so they open a single mutually-buildable PR — Alpine repos keep only the latest build of each apk and purge older ones from the index, so a Dockerfile pinning a drifted version fails to build; splitting apk bumps across PRs deadlocks (each PR still pins the purged versions the other bumps). No soak, run any time, and automerged once CI (the real Docker build — the exact check a stale pin would fail) passes. separateMinorPatch/separateMajorMinor are forced false for the repology datasource so no apk bump ever splits onto its own branch. (2) Alpine base image (docker datasource): minor bumps cross release lines and require hand-editing the consumer's repology depNameTemplate (alpine_X_Y/), so they are gated to manual review; patch base bumps stay in-line and automerge via docker.json's bundle. Extend AFTER automerge.json and docker.json. Major bumps fall through to default.json's manual-review rule.",
   "packageRules": [
     {
-      "description": "Repology (Alpine apk) patch/pin/digest pins: own group, skip the soak, run off-schedule, automerge",
+      "description": "Keep every Alpine apk (repology) bump on ONE branch. default.json sets separateMajorMinor:true, and separateMinorPatch would prefix the groupSlug (patch-/major-) and split otherwise-grouped apk bumps onto separate branches. Because Alpine purges the old build of a package the moment it drifts, any apk pin left behind on a separate branch fails to build — so all apk update types must co-bump. Force both flags false for the whole repology datasource (NOT scoped by matchUpdateTypes — a major update wouldn't match that filter and would keep default.json's split). Do NOT re-split apk updates by update type.",
       "matchDatasources": ["repology"],
-      "matchUpdateTypes": ["patch", "pin", "digest"],
+      "separateMinorPatch": false,
+      "separateMajorMinor": false
+    },
+    {
+      "description": "Repology (Alpine apk) non-major pins (patch/pin/digest/minor): ONE group, skip the soak, run off-schedule, automerge. Formerly split into 'alpine packages' (patch/pin/digest, automerge) + 'alpine packages (minor)' (manual) — that opened two PRs in any window where one package drifted patch and another drifted minor, and BOTH failed CI because each still pinned the purged versions the other PR bumped. Deadlock. Unified into one group so every drifted apk pin co-bumps in a single PR that automerges once CI passes. Automerge is safe HERE precisely because unifying the group makes the PR self-consistent — CI runs the real Docker build, which is the exact check that would fail on a stale pin. Do NOT re-split by update type to isolate minor bumps for review — that re-introduces the deadlock.",
+      "matchDatasources": ["repology"],
+      "matchUpdateTypes": ["patch", "pin", "digest", "minor"],
       "groupName": "alpine packages",
       "minimumReleaseAge": "0 days",
       "schedule": ["at any time"],
       "automerge": true,
       "automergeType": "pr"
-    },
-    {
-      "description": "Repology (Alpine apk) minor bumps: separate group, manual review. Explicit automerge:false overrides automerge.json's non-major bundle (loaded earlier) so apk minor updates don't automerge.",
-      "matchDatasources": ["repology"],
-      "matchUpdateTypes": ["minor"],
-      "groupName": "alpine packages (minor)",
-      "minimumReleaseAge": "0 days",
-      "schedule": ["at any time"],
-      "automerge": false,
-      "addLabels": ["needs-review"]
     },
     {
       "description": "Alpine base image (docker datasource) minor bumps cross release lines, which requires hand-editing the consumer's repology depNameTemplate (alpine_X_Y/). Gate ONLY these to manual review; never automerge. Patch bumps and digest-only rebuilds stay in-line (template still valid) and ride docker.json's 'dockerfile bases' group + automerge.json's non-major bundle.",
