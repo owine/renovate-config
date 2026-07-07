@@ -47,9 +47,10 @@ Renovate ships built-in default `packageRules` that type every bump `chore:` (np
 | patch / minor / pin / digest | `deps:` | patch → *Dependencies* section |
 | major | `feat:` | minor → *Features* section |
 | security (`vulnerabilityAlerts`) | `fix:` | patch → *Bug Fixes* section |
+| lock file maintenance | `chore:` | **no release** (hidden) |
 | hand-picked consumer dep (e.g. `mcp.json`'s `@modelcontextprotocol/sdk`) | `feat:` | minor → *Features* section |
 
-Rule precedence (last match wins) is: catch-all `*` → `deps` → `major` → `feat` → security `fix` (forced) → any per-repo `feat` opt-in. A repo where a specific dependency's *minor* bumps are consumer-facing can add its own `{ "matchPackageNames": [...], "semanticCommitType": "feat" }` rule — see `mcp.json`.
+Rule precedence (last match wins) is: catch-all `*` → `deps` → lock file maintenance → `chore` → `major` → `feat` → security `fix` (forced) → any per-repo `feat` opt-in. A repo where a specific dependency's *minor* bumps are consumer-facing can add its own `{ "matchPackageNames": [...], "semanticCommitType": "feat" }` rule — see `mcp.json`.
 
 ## Supply-chain posture
 

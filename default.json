@@ -47,6 +47,11 @@
       "semanticCommitType": "deps"
     },
     {
+      "description": "Lock file maintenance commits as `chore:` — the ONE update type that must NOT cut a release. It refreshes transitive/nested deps within existing manifest ranges (no direct-dependency change consumers can see) and runs 4x/week (mon/wed/fri/sun, see the lockFileMaintenance block). Under the `deps:` baseline above it is a release-please releasable unit => a patch release every refresh = pure changelog/version spam. `chore:` is release-please's HIDDEN, non-releasing type, so refreshes stay silent. Uses matchUpdateTypes:['lockFileMaintenance'] (not matchPackageNames) because the maintenance branch has no depName; ordered AFTER the catch-all so it wins over `* => deps`.",
+      "matchUpdateTypes": ["lockFileMaintenance"],
+      "semanticCommitType": "chore"
+    },
+    {
       "description": "Major bumps — separate PR per package, 7-day soak, manual review required. Typed `feat:` (not the baseline `deps:`) so release-please cuts a MINOR release in consumers: a dependency crossing a major line is notable enough to surface in the changelog's Features section, above routine `deps:` patch churn. Safe to type per-rule because default.json's separateMajorMinor/separateMultipleMajor isolate every major onto its own branch — one major per PR, no mixed-type commit. NOT typed `feat!:`/breaking: an upstream major is not automatically the consumer's breaking change.",
       "matchUpdateTypes": ["major"],
       "minimumReleaseAge": "7 days",
