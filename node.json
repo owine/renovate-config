@@ -37,9 +37,18 @@
       "groupName": "testing"
     },
     {
-      "description": "ESLint plugins + typescript-eslint",
-      "matchPackageNames": ["/^eslint-/", "/^@typescript-eslint//"],
+      "description": "ESLint plugins + typescript-eslint. The bare `typescript-eslint` meta-package is unscoped, so the /^@typescript-eslint// regex never matched it — it must be listed explicitly.",
+      "matchPackageNames": [
+        "/^eslint-/",
+        "/^@typescript-eslint//",
+        "typescript-eslint"
+      ],
       "groupName": "eslint plugins"
+    },
+    {
+      "description": "TypeScript compiler family — TypeScript 7 (the Go port) ships no JS API, so tools needing programmatic compiler access (typescript-eslint, Next.js) require the `@typescript/typescript6` compat package aliased over the `typescript` specifier while a second alias supplies the v7 `tsc` bin. Group them so the side-by-side aliases move coherently. https://github.com/typescript-eslint/typescript-eslint/issues/10940 — see also the \"Running side-by-side with TypeScript 6.0\" section of https://devblogs.microsoft.com/typescript/announcing-typescript-7-0/",
+      "matchPackageNames": ["typescript", "@typescript/typescript6"],
+      "groupName": "typescript"
     },
     {
       "description": "Prisma — client + adapter + CLI must bump together",
