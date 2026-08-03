@@ -27,7 +27,7 @@ Only extend the ecosystem presets a repo actually uses. Extend `:mcp` *after* `:
 
 | File | Purpose |
 |------|---------|
-| `default.json` | Baseline. Pinned ranges, 3-day soak, OSV alerts, GH Action digests, lockfile maintenance, pre-commit hook updates, weekly schedule (Mondays, `America/Chicago`). Majors separated into their own PRs and held for manual review. `rebaseWhen: auto` — Renovate rebases stale PRs only when safe (no manual edits, no conflicts); use the PR checkbox to force a rebase otherwise. |
+| `default.json` | Baseline. Pinned ranges, 7-day soak, OSV alerts, GH Action digests, lockfile maintenance, pre-commit hook updates, weekly schedule (Mondays, `America/Chicago`). Majors separated into their own PRs and held for manual review. `rebaseWhen: auto` — Renovate rebases stale PRs only when safe (no manual edits, no conflicts); use the PR checkbox to force a rebase otherwise. |
 | `automerge.json` | Group all non-major updates into one PR, automerge once CI passes. Skip if you want hand-review of every patch. |
 | `node.json` | Node/TS peer-dep groupings: React, TanStack, Radix, Vite, Vitest+testcontainers, ESLint, Prisma, Auth.js, pg, Hono, Preact, Cloudflare Workers (wrangler/@cloudflare/miniflare), toolchain (node+pnpm). |
 | `python.json` | pep621 groupings: FastAPI stack, Pydantic, SQLAlchemy stack, pytest, lint/types tooling. |
@@ -55,7 +55,10 @@ Rule precedence (last match wins) is: catch-all `*` → `deps` → lock file mai
 ## Supply-chain posture
 
 - **`rangeStrategy: pin`** — caret/tilde ranges become exact versions in `package.json`/`pyproject.toml`.
-- **`minimumReleaseAge: 3 days`** baseline (majors: 7 days) — soak window so a yanked/compromised release is caught before it lands; majors additionally require manual review.
+- **`minimumReleaseAge: 7 days`** baseline (majors: also 7 days) — soak window so a yanked/compromised release is caught before it lands; majors additionally require manual review.
+  - Matches the `minimum-release-age=10080` that consumer `.npmrc` files set, so the bot never proposes a version a local `pnpm install` would refuse to resolve. Keep the two in lockstep when changing either.
+  - Combined with the weekly `on monday` schedule, a non-major bump surfaces up to ~13 days after publish (soak expiry rounds up to the next Monday run). Deliberate: routine bumps are not urgent, and CVE fixes bypass both gates.
+  - Rules that deliberately opt out keep their own `0 days`: `vulnerabilityAlerts`, `lockFileMaintenance`, and `alpine.json`'s apk group.
 - **`minimumReleaseAgeBehaviour: timestamp-optional`** — a timestamp-less release is treated as stable rather than held by the soak above.
   - Renovate 42's default (`timestamp-required`) marks any release lacking a publish timestamp as *pending indefinitely*.
   - Combined with the soak, that permanently freezes Docker updates from registries that don't expose timestamps: GHCR, Quay, `mcr.microsoft.com`, most private/Artifactory registries.
