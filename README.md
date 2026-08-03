@@ -99,7 +99,7 @@ Rule precedence (last match wins) is: catch-all `*` → `deps` → lock file mai
   Failed to look up repology package alpine_3_24/tini: no-result
   ```
 
-  The repology datasource emits `no-result` **both** when a package genuinely
+  The Repology datasource emits `no-result` **both** when a package genuinely
   doesn't exist *and* when the HTTP request failed — so this reads like a broken
   `depNameTemplate` or a typo'd package name when it's really transport-layer.
   Before chasing a config bug, hit the endpoint Renovate itself uses:
