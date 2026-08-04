@@ -12,14 +12,14 @@
       "groupName": "dockerfile bases"
     },
     {
-      "description": "GitHub Actions setup family — checkout/setup-node/setup-python/setup-go/pnpm",
+      "description": "GitHub Actions setup family — the checkout + toolchain steps that open almost every job. Grouped because they are order-coupled and reviewing one in isolation hides the breakage: `actions/setup-node` with `cache: pnpm` only works if `pnpm/setup` ran first, so a major on either side needs the other in the same diff. Names `pnpm/setup`, NOT its predecessor `pnpm/action-setup` — action-setup is pnpm v10-and-older only and the fleet is on pnpm 11+, so a compatibility entry would just be a second name to go stale. NOTE: this is an allowlist, so a renamed or newly-adopted action silently drops out of the group (it stays digest-pinned and automerged — those rules key off matchManagers — but loses its grouping); re-audit against real workflow usage when adding toolchains.",
       "matchManagers": ["github-actions"],
       "matchPackageNames": [
         "actions/checkout",
         "actions/setup-node",
         "actions/setup-python",
         "actions/setup-go",
-        "pnpm/action-setup",
+        "pnpm/setup",
         "astral-sh/setup-uv"
       ],
       "groupName": "github-actions-setup"
