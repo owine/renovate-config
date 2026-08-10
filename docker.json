@@ -6,10 +6,16 @@
   ],
   "packageRules": [
     {
-      "description": "Dockerfile base images — group bumps + digest pins together. EXCLUDES node/pnpm: a `FROM node:X` bump is a toolchain move, not a base-image move, and must ride in node.json's `toolchain-versions` group alongside `.nvmrc`/`engines.node`/`packageManager`. Consumers extend `:node` BEFORE `:docker`, so without this carve-out the later preset's groupName wins and Node splits across two PRs that each fail `pnpm install` under engineStrict (owine/doc-scanner #145/#146). Negatives-only list on purpose — Renovate rejects mixing `*` with `!`, and a negatives-only array matches everything not listed. The names mirror node.json's toolchain rule EXACTLY; keep them in sync, or an excluded dep lands in no group at all and deadlocks the same way. Excluding node here does NOT affect digest pinning: `pinDigests` comes from default.json's `matchManagers: [dockerfile, github-actions]` rule, which is untouched, and node's digest/pinDigest updates simply group as `toolchain-versions` instead of `dockerfile bases`.",
+      "description": "Dockerfile base images — group bumps + digest pins together. EXCLUDES the language-runtime images, which are toolchain moves rather than base-image moves and must ride in their own runtime group so an interpreter and the manifest that pins it never bump separately: node/pnpm -> node.json's `toolchain-versions` (`.nvmrc`, `engines.node`, `packageManager`); python -> python.json's `python runtime` (an exact `requires-python = \"==X.Y.Z\"` pin). Consumers extend `:node`/`:python` BEFORE `:docker`, so without this carve-out the later preset's groupName wins (last matching rule wins) and each runtime splits across two PRs that CANNOT go green independently — owine/doc-scanner #145/#146 (ERR_PNPM_UNSUPPORTED_ENGINE on both halves) and owine/trip-tracker #180/#182 (`No interpreter found for Python 3.14.6` on one side, `not compatible with the locked Python requirement` on the other). Deliberately NOT solved by preset ordering: `extends` order lives in each consumer's renovate.json, and no consumer should have to know that grouping depends on it. Negatives-only list on purpose — Renovate rejects mixing `*` with `!` (see docs/string-pattern-matching), and an all-negative array matches everything not listed. Entries are plain strings, which are glob-matched with `.` and `/` literal, so they are exact matches: `python-slim`, `my.registry/python`, and `docker.io/library/postgres` all still group here. The names mirror the runtime rules in node.json/python.json EXACTLY; keep them in sync, or an excluded dep lands in no group at all and deadlocks the same way. This does NOT affect digest pinning: `pinDigests` comes from default.json's `matchManagers: [dockerfile, github-actions]` rule, which is untouched — the runtime images' digest/pinDigest updates simply group under their runtime name instead of `dockerfile bases`.",
       "matchManagers": ["dockerfile"],
       "matchUpdateTypes": ["patch", "minor", "digest", "pinDigest"],
-      "matchPackageNames": ["!node", "!pnpm", "!/^docker\\.io\\/library\\/node$/"],
+      "matchPackageNames": [
+        "!node",
+        "!pnpm",
+        "!docker.io/library/node",
+        "!python",
+        "!docker.io/library/python"
+      ],
       "groupName": "dockerfile bases"
     },
     {

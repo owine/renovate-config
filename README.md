@@ -30,8 +30,8 @@ Only extend the ecosystem presets a repo actually uses. Extend `:mcp` *after* `:
 | `default.json` | Baseline. Pinned ranges, 3-day soak, OSV alerts, GH Action digests, lockfile maintenance, pre-commit hook updates, weekly schedule (Mondays, `America/Chicago`). Majors separated into their own PRs and held for manual review. `rebaseWhen: auto` — Renovate rebases stale PRs only when safe (no manual edits, no conflicts); use the PR checkbox to force a rebase otherwise. |
 | `automerge.json` | Group all non-major updates into one PR, automerge once CI passes. Skip if you want hand-review of every patch. |
 | `node.json` | Node/TS peer-dep groupings: React, TanStack, Radix, Vite, Vitest+testcontainers, ESLint, Prisma, Auth.js, pg, Hono, Preact, Cloudflare Workers (wrangler/@cloudflare/miniflare), toolchain (node+pnpm). |
-| `python.json` | pep621 groupings: FastAPI stack, Pydantic, SQLAlchemy stack, pytest, lint/types tooling. |
-| `docker.json` | Dockerfile base bundling, GH Actions setup/artifact/docker families, runtime-major flags. The `dockerfile bases` group **excludes `node`/`pnpm`** so `FROM node:X` stays with `node.json`'s `toolchain-versions` group — see Consumer notes. |
+| `python.json` | pep621 groupings: FastAPI stack, Pydantic, SQLAlchemy stack, pytest, lint/types tooling. Plus a `python runtime` group binding an exact-pinned `requires-python` (via customManager) to the `python` Docker base image — **needs a manual `uv lock` commit**, see Consumer notes. |
+| `docker.json` | Dockerfile base bundling, GH Actions setup/artifact/docker families, runtime-major flags. The `dockerfile bases` group **excludes the language-runtime images** (`node`/`pnpm`/`python`, both bare and `docker.io/library/…` spellings) so they stay with their own runtime groups — see Consumer notes. |
 | `mcp.json` | MCP server repos: isolate `@modelcontextprotocol/sdk` for manual review (`feat:` prefix), keep `engines.node` unpinned for library consumers. Extend after `node.json`. |
 | `alpine.json` | Alpine updates. apk pins (Repology datasource): one `alpine packages` group, 0-day soak, runs any time, **automerges every non-major bump (patch/pin/digest/minor) together**. Adds a **`hostRules` throttle for `repology.org`** (2 req/s, 2 concurrent, 60s timeout, `abortOnError: false`) so apk lookups stop silently failing. Also gates **alpine base-image (`docker`) minor bumps** to manual review (the base-image patch line automerges). Carved out of `automerge.json`'s bundle — extend after it (and after `docker.json`). **Requires a consumer-side customManager** (see Consumer notes). |
 | `home-assistant.json` | Home Assistant add-on repos. Pins the HA base image (`ghcr.io/home-assistant/base`) to a versioned tag + digest and gates its **minor bumps** to manual review (the tag *is* the Alpine line, so a bump means hand-editing the repology `alpine_X_Y/` template); digest rebuilds automerge. Adds CalVer versioning for the `home-assistant/builder` action. Extend after `:automerge`/`:docker` (and `:alpine` if used). |
@@ -136,25 +136,55 @@ Rule precedence (last match wins) is: catch-all `*` → `deps` → lock file mai
   gate losing to `docker.json`'s "dockerfile bases" group / `automerge.json`'s
   bundle).
 
-- **The Node toolchain moves as one PR, by exclusion — not by ordering.** A Node
-  bump touches `.nvmrc`, `engines.node`, `packageManager`, and the Dockerfile
-  `FROM node:X` at once. Split across two PRs, a repo with `engineStrict` fails
-  `pnpm install --frozen-lockfile` on *both* halves (`ERR_PNPM_UNSUPPORTED_ENGINE`,
-  mirrored expected/got) and neither can go green alone. `docker.json`'s
-  `dockerfile bases` rule therefore negates `node`/`pnpm` from its
-  `matchManagers: ["dockerfile"]` match, leaving them to `node.json`'s
-  `toolchain-versions` group. The negation is deliberate rather than relying on
-  preset order: `:node` happens to be extended before `:docker`, so the later
-  preset's `groupName` would otherwise win, and a fix that depends on consumers
-  keeping that order is one `renovate.json` edit away from regressing. The two
-  name lists must stay in sync — a name excluded in `docker.json` but missing
-  from `node.json` gets no group at all and deadlocks identically. Digest pinning
-  is unaffected: `pinDigests` comes from `default.json`'s
-  `matchManagers: ["dockerfile", "github-actions"]` rule, and node's
-  `digest`/`pinDigest` updates just group as `toolchain-versions`. In a repo that
-  extends `:docker` but **not** `:node`, a Node base-image bump becomes its own PR
-  (or joins `automerge.json`'s non-major bundle) — self-consistent, since there is
-  no `package.json` on the other side to disagree with it.
+- **Language runtimes move as one PR, by exclusion — not by ordering.** Both
+  `node.json`'s `toolchain-versions` and `python.json`'s `python runtime` group a
+  runtime's Docker base image together with the manifest that pins the same
+  version. `docker.json`'s `dockerfile bases` rule matches
+  `matchManagers: ["dockerfile"]`, so it would otherwise re-group those base
+  images out — last matching rule wins, and `:node`/`:python` are extended before
+  `:docker`. It therefore **negates** `node`, `pnpm`, `python`, and their
+  `docker.io/library/…` spellings. The negation is deliberate rather than a
+  reliance on preset order: `extends` order lives in each consumer's
+  `renovate.json`, and no consumer should have to know that grouping depends on
+  it. The exclusion list and the two runtime rules must stay in sync — a name
+  excluded in `docker.json` but missing from its runtime rule gets no group at
+  all and splits exactly as before. Entries are plain strings, glob-matched with
+  `.` and `/` literal, so `python-slim`, `my.registry/python`, `nodered/node-red`,
+  and `docker.io/library/postgres` all still group as `dockerfile bases`.
+
+- **A `python runtime` PR lands red and needs a manual `uv lock` commit.**
+  `uv.lock` carries its own `requires-python`, and nothing in these presets can
+  refresh it: the exact-pin tracker is a `customManager` (a text substitution
+  that runs no lockfile update), and `postUpgradeTasks` isn't available on the
+  Mend-hosted app. Push one hand-authored `uv lock` commit to the PR branch or
+  every uv job fails `The current Python version … is not compatible with the
+  locked Python requirement`. Lockfile maintenance reconciles `uv.lock`
+  eventually, but on its own schedule and on a different branch — it will not
+  unblock the open PR.
+
+  What each split actually breaks:
+
+  | Runtime | Split halves | Failure on *both* halves |
+  |---------|--------------|--------------------------|
+  | Node | `FROM node:X` vs `.nvmrc` + `engines.node` + `packageManager` | `ERR_PNPM_UNSUPPORTED_ENGINE` under `engineStrict`, mirrored expected/got |
+  | Python | `FROM python:X` vs `requires-python = "==X.Y.Z"` | `No interpreter found for Python <old>` / `not compatible with the locked Python requirement` |
+
+  Digest pinning is unaffected either way: `pinDigests` comes from
+  `default.json`'s `matchManagers: ["dockerfile", "github-actions"]` rule, and
+  the runtime images' `digest`/`pinDigest` updates just group under their runtime
+  name. In a repo that extends `:docker` but **not** the matching ecosystem
+  preset, a runtime base-image bump becomes its own PR (or joins
+  `automerge.json`'s non-major bundle) — self-consistent, since there is no
+  manifest on the other side to disagree with it.
+
+- **Runtime majors stay grouped.** Neither runtime rule sets
+  `matchUpdateTypes`, so the group covers majors too — a runtime major has the
+  same drift hazard as a patch, and both deps bump to the same version. This
+  doesn't weaken the major policy: `separateMajorMinor`/`separateMultipleMajor`
+  still isolate the major onto its own branch, and `default.json`'s major rule
+  still applies the 7-day soak, `automerge: false`, `feat:`, and
+  `major-update`/`needs-review`. Grouping decides who shares the branch, not how
+  it's reviewed.
 
 - **`home-assistant.json` is opt-in for HA add-on repos.** It pins
   `ghcr.io/home-assistant/base` (tag + digest) and gates its `minor` bumps to
