@@ -6,9 +6,10 @@
   ],
   "packageRules": [
     {
-      "description": "Dockerfile base images — group bumps + digest pins together",
+      "description": "Dockerfile base images — group bumps + digest pins together. EXCLUDES node/pnpm: a `FROM node:X` bump is a toolchain move, not a base-image move, and must ride in node.json's `toolchain-versions` group alongside `.nvmrc`/`engines.node`/`packageManager`. Consumers extend `:node` BEFORE `:docker`, so without this carve-out the later preset's groupName wins and Node splits across two PRs that each fail `pnpm install` under engineStrict (owine/doc-scanner #145/#146). Negatives-only list on purpose — Renovate rejects mixing `*` with `!`, and a negatives-only array matches everything not listed. The names mirror node.json's toolchain rule EXACTLY; keep them in sync, or an excluded dep lands in no group at all and deadlocks the same way. Excluding node here does NOT affect digest pinning: `pinDigests` comes from default.json's `matchManagers: [dockerfile, github-actions]` rule, which is untouched, and node's digest/pinDigest updates simply group as `toolchain-versions` instead of `dockerfile bases`.",
       "matchManagers": ["dockerfile"],
       "matchUpdateTypes": ["patch", "minor", "digest", "pinDigest"],
+      "matchPackageNames": ["!node", "!pnpm", "!/^docker\\.io\\/library\\/node$/"],
       "groupName": "dockerfile bases"
     },
     {
