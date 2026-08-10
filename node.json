@@ -81,8 +81,8 @@
       "groupName": "cloudflare-workers"
     },
     {
-      "description": "Node + pnpm toolchain — engines, packageManager, .nvmrc, Dockerfile FROM all move in lockstep",
-      "matchPackageNames": ["node", "pnpm"],
+      "description": "Node + pnpm toolchain — engines, packageManager, .nvmrc, Dockerfile `FROM node:X`, and the Dockerfile `ARG PNPM_VERSION` custom manager all move in lockstep. A repo with engineStrict CANNOT build with these split: the Dockerfile pins one Node and package.json demands another, so `pnpm install --frozen-lockfile` fails ERR_PNPM_UNSUPPORTED_ENGINE on BOTH halves and neither PR can go green alone. The lockstep is only real because docker.json's `dockerfile bases` rule negates these same names — it matches `matchManagers: [dockerfile]` and consumers extend `:node` before `:docker`, so the later preset would otherwise win the groupName and pull `FROM node:X` out. Keep this list and that negation in sync. (`ARG PNPM_VERSION` needs no carve-out there: it is a `custom.regex` manager, not `dockerfile`, so `dockerfile bases` never matched it — it reaches this group via its `pnpm` depNameTemplate.) The fully-qualified `docker.io/library/node` form is listed because `FROM docker.io/library/node:X` yields that depName rather than the bare `node`.",
+      "matchPackageNames": ["node", "pnpm", "/^docker\\.io\\/library\\/node$/"],
       "groupName": "toolchain-versions"
     },
     {

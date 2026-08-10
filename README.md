@@ -31,7 +31,7 @@ Only extend the ecosystem presets a repo actually uses. Extend `:mcp` *after* `:
 | `automerge.json` | Group all non-major updates into one PR, automerge once CI passes. Skip if you want hand-review of every patch. |
 | `node.json` | Node/TS peer-dep groupings: React, TanStack, Radix, Vite, Vitest+testcontainers, ESLint, Prisma, Auth.js, pg, Hono, Preact, Cloudflare Workers (wrangler/@cloudflare/miniflare), toolchain (node+pnpm). |
 | `python.json` | pep621 groupings: FastAPI stack, Pydantic, SQLAlchemy stack, pytest, lint/types tooling. |
-| `docker.json` | Dockerfile base bundling, GH Actions setup/artifact/docker families, runtime-major flags. |
+| `docker.json` | Dockerfile base bundling, GH Actions setup/artifact/docker families, runtime-major flags. The `dockerfile bases` group **excludes `node`/`pnpm`** so `FROM node:X` stays with `node.json`'s `toolchain-versions` group — see Consumer notes. |
 | `mcp.json` | MCP server repos: isolate `@modelcontextprotocol/sdk` for manual review (`feat:` prefix), keep `engines.node` unpinned for library consumers. Extend after `node.json`. |
 | `alpine.json` | Alpine updates. apk pins (Repology datasource): one `alpine packages` group, 0-day soak, runs any time, **automerges every non-major bump (patch/pin/digest/minor) together**. Adds a **`hostRules` throttle for `repology.org`** (2 req/s, 2 concurrent, 60s timeout, `abortOnError: false`) so apk lookups stop silently failing. Also gates **alpine base-image (`docker`) minor bumps** to manual review (the base-image patch line automerges). Carved out of `automerge.json`'s bundle — extend after it (and after `docker.json`). **Requires a consumer-side customManager** (see Consumer notes). |
 | `home-assistant.json` | Home Assistant add-on repos. Pins the HA base image (`ghcr.io/home-assistant/base`) to a versioned tag + digest and gates its **minor bumps** to manual review (the tag *is* the Alpine line, so a bump means hand-editing the repology `alpine_X_Y/` template); digest rebuilds automerge. Adds CalVer versioning for the `home-assistant/builder` action. Extend after `:automerge`/`:docker` (and `:alpine` if used). |
@@ -135,6 +135,26 @@ Rule precedence (last match wins) is: catch-all `*` → `deps` → lock file mai
   in the generic non-major automerge bundle, or the alpine / HA base-image minor
   gate losing to `docker.json`'s "dockerfile bases" group / `automerge.json`'s
   bundle).
+
+- **The Node toolchain moves as one PR, by exclusion — not by ordering.** A Node
+  bump touches `.nvmrc`, `engines.node`, `packageManager`, and the Dockerfile
+  `FROM node:X` at once. Split across two PRs, a repo with `engineStrict` fails
+  `pnpm install --frozen-lockfile` on *both* halves (`ERR_PNPM_UNSUPPORTED_ENGINE`,
+  mirrored expected/got) and neither can go green alone. `docker.json`'s
+  `dockerfile bases` rule therefore negates `node`/`pnpm` from its
+  `matchManagers: ["dockerfile"]` match, leaving them to `node.json`'s
+  `toolchain-versions` group. The negation is deliberate rather than relying on
+  preset order: `:node` happens to be extended before `:docker`, so the later
+  preset's `groupName` would otherwise win, and a fix that depends on consumers
+  keeping that order is one `renovate.json` edit away from regressing. The two
+  name lists must stay in sync — a name excluded in `docker.json` but missing
+  from `node.json` gets no group at all and deadlocks identically. Digest pinning
+  is unaffected: `pinDigests` comes from `default.json`'s
+  `matchManagers: ["dockerfile", "github-actions"]` rule, and node's
+  `digest`/`pinDigest` updates just group as `toolchain-versions`. In a repo that
+  extends `:docker` but **not** `:node`, a Node base-image bump becomes its own PR
+  (or joins `automerge.json`'s non-major bundle) — self-consistent, since there is
+  no `package.json` on the other side to disagree with it.
 
 - **`home-assistant.json` is opt-in for HA add-on repos.** It pins
   `ghcr.io/home-assistant/base` (tag + digest) and gates its `minor` bumps to
