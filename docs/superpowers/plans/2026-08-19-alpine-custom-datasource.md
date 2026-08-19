@@ -478,3 +478,64 @@ BODY
 - [ ] **Step 2: Report the PR URL and the Phase 2 checklist to the maintainer**
 
 List the five repos with their expected dep counts and which two need a community packageRule.
+
+
+---
+
+## Execution notes (recorded 2026-08-19, after running this plan)
+
+Four things the plan did not anticipate. Fold them into any re-run.
+
+1. **A token is effectively required, contrary to the spec's "optional".**
+   GitHub's anonymous limit is 60 requests/hour and a five-repo preset chain
+   exhausts it fast; once it does, `github>owine/renovate-config` fails with
+   `dep not found` / `Cannot find preset's package`, which looks like a broken
+   preset rather than rate limiting. Export
+   `GITHUB_COM_TOKEN=$(gh auth token)` before running the harness.
+   `RENOVATE_TOKEN` is still the wrong variable — it is ignored here.
+
+2. **Assert the served preset's identity every run.** A leftover HTTP server
+   from an earlier session was still bound to :8899, serving a *different*
+   `alpine.json` from another directory. The first full gate run therefore
+   passed against the wrong file and had to be discarded. `kill` against a
+   stale PID file reported success while the real process survived. Always:
+
+   ```bash
+   for pid in $(lsof -ti:8899); do kill -9 "$pid"; done
+   cd "$REPO" && nohup python3 -m http.server 8899 --bind 127.0.0.1 >/dev/null 2>&1 &
+   curl -s http://127.0.0.1:8899/alpine.json | diff -q - alpine.json && echo "identity OK"
+   ```
+
+   and grep each `lookup.log` for a string unique to the new preset before
+   trusting its result. Clear `RENOVATE_CACHE_DIR` between runs too.
+
+3. **The node gate cannot be verified end-to-end under `--platform=local`.**
+   That platform never reaches branch/PR creation, so branch-level `automerge`
+   and `addLabels` never appear in the log; the per-update fields in
+   `packageFiles with updates` are pre-flattening and read `None` even for
+   rules that definitely applied. Verify *matching* instead, with a probe:
+   serve a scratch copy of `alpine.json` whose node rule carries
+   `"groupName": "NODE GATE PROBE"`, and confirm the node **minor** update
+   moves to `renovate/node-gate-probe` while **pinDigest** stays on
+   `renovate/toolchain-versions`. That proves the matchers and the deliberate
+   digest exclusion. Propagation of `automerge: false` and the unioned
+   `addLabels` to the branch is Renovate's own behaviour
+   (`workers/repository/updates/generate.js`: `config.automerge =
+   config.upgrades.every(u => u.automerge)`).
+
+4. **Renovate drifted 44.33.0 -> 44.34.0 mid-session** via Homebrew. Results
+   held across both. Pin the version if a run must be reproducible.
+
+### Results of the Phase 1 gate (against the real, committed `alpine.json`)
+
+| Repo | Deps | Result |
+|------|------|--------|
+| `nut-cgi` | 6 | `UNTRACKED: none` |
+| `ha-hetrixtools-agent` | 12 | `UNTRACKED: none` |
+| `doc-scanner` | 1 | `UNTRACKED: ['alpine_3_24/tini']` — expected; fixed by its Phase 2 community rule (verified) |
+| `house-manager` | 2 | `UNTRACKED: none` |
+| `claude-terminal-home-assistant` | 19 | `UNTRACKED:` exactly the six predicted community packages |
+
+Also confirmed: `gd` and `gd-dev` resolve as distinct deps in `nut-cgi`; apk
+deps still group under `alpine packages` in all three non-community repos; and
+`renovate-config-validator --strict` passes over all eight presets.
