@@ -194,8 +194,9 @@ derivation, its registry URL too.
 
 Neither gate covers `doc-scanner` or `house-manager`, which take their Alpine
 line from `node:24.19.0-alpine`. Node's images move their Alpine base at times
-of Node's choosing, including on **patch** rebuilds, so no update-type subset
-short of minor+patch is sufficient. Add to `alpine.json`:
+of Node's choosing, including on **patch** rebuilds, so nothing narrower than
+minor+patch is worth gating — and even minor+patch is not complete; see the
+digest gap below. Add to `alpine.json`:
 
 ```json
 {
@@ -331,12 +332,25 @@ the dry-run fixture is the real one.
 - `registryStrategy: "first"` confirmed, with the `Excess registryUrls` WARN.
 - The silent-untracked failure reproduces exactly as described above.
 
-### Per-repo gate before each consumer PR merges
+### The gate, and when each phase runs it
 
-Consumers resolve presets from the default branch, so before the preset lands,
-dry-run against the branch ref
-(`github>owine/renovate-config:alpine#feat/alpine-custom-datasource`); after it
-lands, the plain ref is fine. No token is required — `owine/renovate-config` is
+The same script serves three moments, with only the preset ref differing:
+
+- **Phase 1, before the preset PR merges** — run it against **throwaway local
+  clones** of all five consumers, with both edits applied in the working copy
+  only (`extends` repointed to the branch ref, `customManager` switched to
+  `custom.alpine`) and nothing committed. This is the gate that must pass
+  before Phase 1 lands; consumers resolve presets from the default branch, so
+  the branch ref is the only way to exercise the new preset beforehand. Discard
+  the clones afterwards.
+- **Phase 2, in each consumer session** — run it against the plain ref
+  (`github>owine/renovate-config:alpine`), which by then resolves the merged
+  preset. No `extends` edit is involved.
+- **Rollback** — run it in each reverted repo; the script is deliberately
+  datasource-agnostic so it works there too.
+
+Branch ref for Phase 1:
+`github>owine/renovate-config:alpine#feat/alpine-custom-datasource`. No token is required — `owine/renovate-config` is
 public (verified with all of `RENOVATE_TOKEN`/`GITHUB_TOKEN`/`GITHUB_COM_TOKEN`
 unset). If you hit GitHub's anonymous rate limit, set **`GITHUB_COM_TOKEN`**;
 `RENOVATE_TOKEN` is the platform token and is ignored for preset fetching under
@@ -346,7 +360,7 @@ presets at all.
 
 Two assertions per repo:
 
-1. **Every `custom.alpine` dep reports a non-null `currentVersion`.** This is
+1. **Every apk dep reports a non-null `currentVersion`.** This is
    the discriminator, and it is the one that matters: a silently-untracked dep
    has `updates: []`, `warnings: []` and **no** `currentVersion`, while a
    tracked-and-current dep has `currentVersion` set. Dependency *count* parity
@@ -368,11 +382,15 @@ for l in lines[i+1:]:
     if l.startswith((' ', '\t')): buf.append(l)
     else: break
 cfg = json.loads('{' + '\n'.join(buf).strip() + '}')['config']
+# Filter by depName, NOT by datasource: this must also work after a rollback,
+# when the deps are `repology` again. Filtering on custom.alpine would inspect
+# zero deps in a reverted repo and report a vacuous pass.
 deps = [d for files in cfg.values() for f in files for d in f.get('deps', [])
-        if d.get('datasource') == 'custom.alpine']
+        if d.get('depName', '').startswith('alpine_')]
 seen = {d['depName']: d for d in deps}          # dedupe repeated blocks
 bad = [n for n, d in seen.items() if not d.get('currentVersion')]
-print(f"{len(seen)} custom.alpine deps; UNTRACKED: {bad or 'none'}")
+ds = sorted({d.get('datasource') for d in seen.values()})
+print(f"{len(seen)} apk deps via {ds}; UNTRACKED: {bad or 'none'}")
 for n, d in sorted(seen.items()):
     up = (d.get('updates') or [{}])[0].get('newValue', '-')
     print(f"  {n:36} {d.get('currentVersion','** UNTRACKED **'):14} -> {up}")
@@ -380,7 +398,7 @@ EOF
 ```
 
 Exit criteria: `UNTRACKED: none`; the distinct-depName count matches the
-Appendix; and the diff contains **no `#` in `extends`** (see the Appendix steps).
+Appendix; and any genuinely stale pin shows the expected `newValue`.
 
 ## Sequencing and rollback
 
@@ -389,9 +407,13 @@ performed in **separate sessions in each consumer repo**, using the Appendix.
 
 **Phase 1 — preset PR** (this repo): add `customDatasources`, flip both
 `matchDatasources`, add the node gate, rewrite descriptions, update README.
-**Keep `hostRules`.**
+**Keep `hostRules`.** Before merging, run the gate against throwaway local
+clones of all five consumers pointed at the branch ref (see Validation) —
+nothing is committed in those clones. Phase 1 does not merge until all five
+pass.
 
-**Phase 2 — five consumer PRs**, one session each, any order.
+**Phase 2 — five consumer PRs**, one session each, any order, each using the
+plain preset ref and re-running the gate in its own repo.
 
 **Phase 3 — cleanup PR** (this repo): delete the `hostRules` repology throttle
 and the README text that describes it, once all five have merged. Trigger: the
@@ -427,7 +449,11 @@ unwinds in this order:
    2026-08-19. A rollback is exactly as capable of silent-untracking as a
    migration.
 2. **Re-run the Validation script in each reverted repo** and confirm
-   `UNTRACKED: none`.
+   `UNTRACKED: none` and that it reports the deps via `['repology']`. The
+   script filters on `depName` rather than datasource precisely so it works
+   here — an earlier draft filtered on `custom.alpine`, which inspects zero
+   deps in a reverted repo and reports a vacuous pass on exactly the broken
+   state step 1 warns about.
 3. Revert the preset.
 4. If Phase 3 already merged, **restore the `hostRules` throttle** — otherwise
    the reverted fleet lands on unthrottled Repology, the original failure.
@@ -449,20 +475,14 @@ replacing `"datasourceTemplate": "repology"`. Steps, in order:
    `extractVersionTemplate`, and update the `description` (it names Repology in
    all five repos).
 2. Add the community packageRule if this repo needs one (table below).
-3. **Temporarily** change `extends` from
-   `"github>owine/renovate-config:alpine"` to
-   `"github>owine/renovate-config:alpine#feat/alpine-custom-datasource"` — the
-   branch ref only takes effect if `extends` actually points at it, and the
-   preset is not on the default branch until Phase 1 merges.
-4. Run the Validation gate above; confirm `UNTRACKED: none` and the expected
-   distinct-depName count.
-5. **Change `extends` back** to `"github>owine/renovate-config:alpine"` before
-   committing. A consumer left pinned to a feature branch breaks preset
-   resolution outright once that branch is deleted on merge. Confirm the diff
-   contains no `#` in `extends`.
-
-Skip steps 3 and 5 entirely if Phase 1 has already merged — then the plain ref
-resolves the new preset and there is nothing to temporarily repoint.
+3. Run the Validation gate; confirm `UNTRACKED: none`, the expected
+   distinct-depName count, and that the reported datasource is
+   `['custom.alpine']`.
+4. Before committing, confirm the diff does **not** touch `extends` — it stays
+   `"github>owine/renovate-config:alpine"`. Phase 2 runs after Phase 1 has
+   merged, so the plain ref already resolves the new preset; there is no branch
+   ref to add and none should appear. A consumer left pinned to a feature
+   branch breaks preset resolution outright once that branch is deleted.
 
 | Repo | Config file | `managerFilePatterns` | Expected distinct depNames | Community rule |
 |------|-------------|----------------------|---------------|----------------|
@@ -501,11 +521,24 @@ Required whenever a new apk pin is added to any of these repos:
 ```bash
 PKG=tini; LINE=3.24
 for R in main community; do
-  printf '%-10s ' "$R"
-  curl -s "https://dl-cdn.alpinelinux.org/alpine/v$LINE/$R/x86_64/" \
-    | grep -oE "href=\"$PKG-[0-9][^\"]*" | sed 's/href="//' || echo '-'
+  hit=$(curl -s "https://dl-cdn.alpinelinux.org/alpine/v$LINE/$R/x86_64/" \
+        | grep -oE "\"$PKG-[0-9][^\"]*" | tr -d '"')
+  printf '%-10s %s\n' "$R" "${hit:--}"
 done
 ```
+
+Expected output for a community package:
+
+```
+main       -
+community  tini-0.19.0-r3.apk
+```
+
+Do **not** use a `grep … | sed … || echo '-'` pipeline here: the exit status is
+`sed`'s, so a miss prints nothing and no newline, and the two labels run
+together as `main       community  tini-…`, which reads as a hit under `main`.
+Acting on that misreading omits the package from the community rule — the
+silent-untrack this check exists to prevent.
 
 ### Repo-specific cautions
 
