@@ -1,7 +1,9 @@
 # Alpine apk pins: Repology → custom CDN datasource — design
 
 Date: 2026-08-19
-Status: Approved (revised after spec review, same day)
+Status: Implemented. Phase 1 merged as owine/renovate-config#79; all five
+consumers migrated; Phase 3 (throttle removal) completed 2026-08-19. Fleet
+verified: 6/12/1/2/19 apk deps resolving via custom.alpine, UNTRACKED: none.
 
 ## Problem
 
