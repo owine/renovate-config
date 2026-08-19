@@ -33,7 +33,7 @@ Only extend the ecosystem presets a repo actually uses. Extend `:mcp` *after* `:
 | `python.json` | pep621 groupings: FastAPI stack, Pydantic, SQLAlchemy stack, pytest, lint/types tooling. Plus a `python runtime` group binding an exact-pinned `requires-python` (via customManager) to the `python` Docker base image — **needs a manual `uv lock` commit**, see Consumer notes. |
 | `docker.json` | Dockerfile base bundling, GH Actions setup/artifact/docker families, runtime-major flags. The `dockerfile bases` group **excludes the language-runtime images** (`node`/`pnpm`/`python`, both bare and `docker.io/library/…` spellings) so they stay with their own runtime groups — see Consumer notes. |
 | `mcp.json` | MCP server repos: isolate `@modelcontextprotocol/sdk` for manual review (`feat:` prefix), keep `engines.node` unpinned for library consumers. Extend after `node.json`. |
-| `alpine.json` | Alpine updates. apk pins (**custom Alpine-CDN datasource**, `custom.alpine`): one `alpine packages` group, 0-day soak, runs any time, **automerges every non-major bump (patch/pin/digest/minor) together**. Retains a **transitional `hostRules` throttle for `repology.org`** until every consumer has migrated off Repology. Also gates **`node:*-alpine` image bumps** (minor/patch) to manual review. Also gates **alpine base-image (`docker`) minor bumps** to manual review (the base-image patch line automerges). Carved out of `automerge.json`'s bundle — extend after it (and after `docker.json`). **Requires a consumer-side customManager** (see Consumer notes). |
+| `alpine.json` | Alpine updates. apk pins (**custom Alpine-CDN datasource**, `custom.alpine`): one `alpine packages` group, 0-day soak, runs any time, **automerges every non-major bump (patch/pin/digest/minor) together**. Gates **`node:*-alpine` image bumps** (minor/patch) to manual review. Also gates **alpine base-image (`docker`) minor bumps** to manual review (the base-image patch line automerges). Carved out of `automerge.json`'s bundle — extend after it (and after `docker.json`). **Requires a consumer-side customManager** (see Consumer notes). |
 | `home-assistant.json` | Home Assistant add-on repos. Pins the HA base image (`ghcr.io/home-assistant/base`) to a versioned tag + digest and gates its **minor bumps** to manual review (the tag *is* the Alpine line, so a bump means hand-editing the `alpine_X_Y/` template that also drives the CDN registry URL); digest rebuilds automerge. Adds CalVer versioning for the `home-assistant/builder` action. Extend after `:automerge`/`:docker` (and `:alpine` if used). |
 
 ## Commit types & release-please
@@ -147,14 +147,7 @@ Rule precedence (last match wins) is: catch-all `*` → `deps` → lock file mai
   of a config typo. Check the URL Renovate actually built before changing
   config: `https://dl-cdn.alpinelinux.org/alpine/v<line>/main/x86_64/`. Note the
   distinct and more dangerous case above: a package in the *wrong* index
-  produces **no** message at all.
-
-- **The `repology.org` `hostRules` throttle is transitional.** `alpine.json`
-  still ships it (`maxRequestsPerSecond: 2`, `concurrentRequestLimit: 2`,
-  `timeout: 60000`, `abortOnError: false`) because Repology rate-limits
-  aggressively and Mend-hosted Renovate runs from shared IPs. It exists only for
-  consumers that have not yet moved their `customManager` to `custom.alpine`,
-  and should be deleted once all of them have. Upstream
+  produces **no** message at all. Upstream
   [renovatebot/renovate#40250](https://github.com/renovatebot/renovate/pull/40250)
   adds a first-class APK datasource; when it ships, `custom.alpine` becomes a
   one-line swap per repo and the `customDatasources` block goes away.
