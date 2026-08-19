@@ -209,9 +209,33 @@ short of minor+patch is sufficient. Add to `alpine.json`:
 ```
 
 Accepted cost: node and pnpm bumps stop automerging in `doc-scanner` and
-`house-manager` (the only `:alpine` consumers using the node image; the rule is
-inert in the other three). Ordering holds because consumers extend `:alpine`
-after `:node` and `:docker`, and last match wins.
+`house-manager` (the only `:alpine` consumers using the node image today; the
+rule is inert in the other three). Verified 2026-08-19 against the real preset
+chain: with no `groupName`, node and pnpm stay together on
+`renovate/toolchain-versions`; a single `automerge: false` upgrade disables
+automerge for the whole branch, and `addLabels` is unioned across upgrades, so
+`needs-review` lands. Ordering holds because consumers extend `:alpine` after
+`:node` and `:docker`, and last match wins.
+
+The rule is **unconditional for every `:alpine` consumer** — a future repo that
+uses a node image but takes its Alpine line from an `alpine:` base inherits the
+gate anyway. This is also the **third** place `node`/`docker.io/library/node`
+is named in these presets, after `node.json`'s `toolchain-versions` group and
+`docker.json`'s `dockerfile bases` negation list. Keep the three in sync.
+
+**`digest`/`pinDigest` are deliberately excluded**, and this is the one real
+gap. A same-tag rebuild can re-point the floating `node:24.19.0-alpine` alias
+at a new Alpine line, which is a digest-only change the gate will not catch.
+The obvious structural fix — pinning `node:24.19.0-alpine3.24`, which exists as
+a real tag — was **considered and rejected 2026-08-19**: Renovate cannot track
+the node version and the Alpine suffix as two coupled components, so an
+explicit suffix would freeze the Alpine line with nothing ever signalling the
+move to `-alpine3.25`. That trades a rare silent crossing for a permanent
+silent stall. Gating digests instead was also rejected: these repos run
+`pinDigests: true`, so digest refreshes are frequent and each one would
+disable automerge for the entire `toolchain-versions` branch. The floating tag
+stays and the digest-crossing risk is accepted; it surfaces downstream when
+`apk add` fails on a version absent from the new line.
 
 ### Arch assumption
 
@@ -253,9 +277,16 @@ Re-measure by diffing the `href` lists of the three arch indexes.
   configured only` and never tries the second. This lands in the run's warning
   set, making it the one loud misconfiguration in this design. The community
   override must **replace** the URL, not append to it.
-- **Index size / cost**: the `main/x86_64` listing is 717 KB / 5,963 entries;
-  two fetches per run per repo, against a CDN built for package traffic.
-  A CDN edge serving a stale index could briefly lag a purge.
+- **Index size / cost**: the `main/x86_64` listing is 717 KB / 5,963 entries.
+  Renovate's custom datasource caches per `packageName`, **not** per
+  `registryUrl`, so it refetches the full index roughly once per pinned package
+  — measured 2026-08-19: 8 fetches for 6 deps. That is ~14 MB/run for
+  `claude-terminal-home-assistant` (19 pins) and ~29 MB/cycle fleet-wide, not
+  the two-fetches-per-repo an earlier draft assumed. The "no host policy"
+  decision was taken against the wrong figure and is left standing against the
+  right one: this is a CDN built for package traffic. Revisit if it ever shows
+  up as slow lookups. A CDN edge serving a stale index could briefly lag a
+  purge.
 
 ### README
 
@@ -270,7 +301,8 @@ Re-measure by diffing the `href` lists of the three arch indexes.
 - Extend the "Alpine version in `depNameTemplate` is repo-specific" note: that
   one edit now also drives the registry URL, and it is still exactly one edit.
 - Add the node-image gate to the consumer notes, including its automerge cost.
-- Note the all-or-nothing rollback.
+- Note the rollback unwind order — in particular that reverting a consumer
+  means deleting `extractVersionTemplate`, not just changing the datasource.
 
 ## Validation
 
@@ -304,8 +336,12 @@ the dry-run fixture is the real one.
 Consumers resolve presets from the default branch, so before the preset lands,
 dry-run against the branch ref
 (`github>owine/renovate-config:alpine#feat/alpine-custom-datasource`); after it
-lands, the plain ref is fine. Resolving a `github>` preset needs a token in the
-environment (`RENOVATE_TOKEN`); `--platform=local` cannot resolve `local>`
+lands, the plain ref is fine. No token is required — `owine/renovate-config` is
+public (verified with all of `RENOVATE_TOKEN`/`GITHUB_TOKEN`/`GITHUB_COM_TOKEN`
+unset). If you hit GitHub's anonymous rate limit, set **`GITHUB_COM_TOKEN`**;
+`RENOVATE_TOKEN` is the platform token and is ignored for preset fetching under
+`--platform=local`. The `#<branch>` suffix maps to `?ref=`, and a branch name
+containing `/` parses correctly. `--platform=local` cannot resolve `local>`
 presets at all.
 
 Two assertions per repo:
@@ -316,8 +352,10 @@ Two assertions per repo:
    tracked-and-current dep has `currentVersion` set. Dependency *count* parity
    does **not** work here — the count comes from the unchanged `customManager`
    regex extraction and is identical whether the datasource resolves or not.
-2. The expected dep count for that repo (Appendix table) is present, and any
-   genuinely stale pin produces the expected `newValue`.
+2. The expected **distinct depName** count for that repo (Appendix table) is
+   present — this is what the script's `len(seen)` reports, after deduping the
+   repeated packageFile blocks Renovate can emit — and any genuinely stale pin
+   produces the expected `newValue`.
 
 ```bash
 LOG_LEVEL=debug renovate --platform=local --dry-run=lookup > lookup.log 2>&1
@@ -341,7 +379,8 @@ for n, d in sorted(seen.items()):
 EOF
 ```
 
-Exit criterion: `UNTRACKED: none`, and the dep count matches the Appendix.
+Exit criteria: `UNTRACKED: none`; the distinct-depName count matches the
+Appendix; and the diff contains **no `#` in `extends`** (see the Appendix steps).
 
 ## Sequencing and rollback
 
@@ -355,7 +394,9 @@ performed in **separate sessions in each consumer repo**, using the Appendix.
 **Phase 2 — five consumer PRs**, one session each, any order.
 
 **Phase 3 — cleanup PR** (this repo): delete the `hostRules` repology throttle
-and the README text that describes it, once all five have merged.
+and the README text that describes it, once all five have merged. Trigger: the
+fifth consumer PR merging. Verification: re-run the Validation gate in one
+consumer repo afterwards to confirm nothing regressed.
 
 Exposure window: consumers resolve the preset from the default branch, so the
 moment Phase 1 merges, an un-migrated repo's apk deps (still
@@ -372,14 +413,23 @@ pre-merge verification alone is not enough. After the repo's next Renovate run:
 confirm the Dependency Dashboard shows no `no-result` warnings, and that apk
 updates (if any) arrive as a single `alpine packages` PR rather than split PRs.
 
-**Rollback.** Reverting the preset while consumers are on `custom.alpine`
-leaves apk pins ungrouped, which is worse than either end state. Unwind order,
-including from a half-migrated fleet:
+**Rollback.** "All-or-nothing" here means only that the preset cannot be
+reverted on its own: doing so while consumers are on `custom.alpine` leaves apk
+pins ungrouped, which is worse than either end state. A half-migrated fleet
+unwinds in this order:
 
-1. Revert the migrated consumer repos to `datasourceTemplate: "repology"`
-   (dropping their community packageRules).
-2. Revert the preset.
-3. If Phase 3 already merged, **restore the `hostRules` throttle** — otherwise
+1. In each migrated consumer repo: revert `datasourceTemplate` to `repology`,
+   **delete `extractVersionTemplate`**, and drop the community packageRule.
+   Deleting `extractVersionTemplate` is not optional — Repology returns bare
+   versions (`8.14.1-r1`), none of which match a regex anchored on
+   `-…\.apk$`, so leaving it behind silently untracks **every** apk pin in the
+   repo (`currentVersion: null`, no warning, no dashboard entry). Verified
+   2026-08-19. A rollback is exactly as capable of silent-untracking as a
+   migration.
+2. **Re-run the Validation script in each reverted repo** and confirm
+   `UNTRACKED: none`.
+3. Revert the preset.
+4. If Phase 3 already merged, **restore the `hostRules` throttle** — otherwise
    the reverted fleet lands on unthrottled Repology, the original failure.
 
 ## Appendix: per-repo migration recipe
@@ -393,11 +443,28 @@ does **not** change. In every repo the `customManager` edit is identical:
 "extractVersionTemplate": "^{{{package}}}-(?<version>\\d.*)\\.apk$"
 ```
 
-replacing `"datasourceTemplate": "repology"`. Also update that manager's
-`description`, which names Repology in all five repos. Then run the Validation
-gate above and confirm `UNTRACKED: none` and the expected dep count.
+replacing `"datasourceTemplate": "repology"`. Steps, in order:
 
-| Repo | Config file | `managerFilePatterns` | Expected deps | Community rule |
+1. Edit the `customManager`: swap `datasourceTemplate`, add
+   `extractVersionTemplate`, and update the `description` (it names Repology in
+   all five repos).
+2. Add the community packageRule if this repo needs one (table below).
+3. **Temporarily** change `extends` from
+   `"github>owine/renovate-config:alpine"` to
+   `"github>owine/renovate-config:alpine#feat/alpine-custom-datasource"` — the
+   branch ref only takes effect if `extends` actually points at it, and the
+   preset is not on the default branch until Phase 1 merges.
+4. Run the Validation gate above; confirm `UNTRACKED: none` and the expected
+   distinct-depName count.
+5. **Change `extends` back** to `"github>owine/renovate-config:alpine"` before
+   committing. A consumer left pinned to a feature branch breaks preset
+   resolution outright once that branch is deleted on merge. Confirm the diff
+   contains no `#` in `extends`.
+
+Skip steps 3 and 5 entirely if Phase 1 has already merged — then the plain ref
+resolves the new preset and there is nothing to temporarily repoint.
+
+| Repo | Config file | `managerFilePatterns` | Expected distinct depNames | Community rule |
 |------|-------------|----------------------|---------------|----------------|
 | `nut-cgi` | `.github/renovate.json` | `/Dockerfile$/` | 6 | no |
 | `ha-hetrixtools-agent` | `renovate.json` | `/^hetrixtools-agent/Dockerfile$/` | 12 | no |
