@@ -1,6 +1,6 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "description": "Home Assistant add-on repos. HA base image (ghcr.io/home-assistant/base) is pinned to a versioned tag + digest; minor base bumps are gated to manual review because the tag is the Alpine release line, so a bump means hand-editing the consumer's repology alpine_X_Y/ depNameTemplate. The home-assistant/builder action uses CalVer (YYYY.MM.PATCH). Extend AFTER automerge.json and docker.json (and alpine.json if used).",
+  "description": "Home Assistant add-on repos. HA base image (ghcr.io/home-assistant/base) is pinned to a versioned tag + digest; minor base bumps are gated to manual review because the tag is the Alpine release line, so a bump means hand-editing the consumer's alpine_X_Y/ depNameTemplate — which also drives the CDN registry URL that alpine.json's custom.alpine datasource derives from it. The home-assistant/builder action uses CalVer (YYYY.MM.PATCH). Extend AFTER automerge.json and docker.json (and alpine.json if used).",
   "packageRules": [
     {
       "description": "Home Assistant base image — pin to a versioned tag with digest; Renovate keeps the digest updated. The tag is the Alpine release line (e.g. 3.24).",
@@ -10,7 +10,7 @@
       "versioning": "loose"
     },
     {
-      "description": "HA base image version bumps cross the Alpine release line (e.g. 3.23 -> 3.24), which requires hand-editing the consumer's repology depNameTemplate (alpine_X_Y/). Gate minor to manual review; never automerge. Patch bumps and digest-only rebuilds stay in-line and ride docker.json's 'dockerfile bases' group + automerge.json's non-major bundle.",
+      "description": "HA base image version bumps cross the Alpine release line (e.g. 3.23 -> 3.24), which requires hand-editing the consumer's depNameTemplate (alpine_X_Y/) — also the source of the CDN registry URL. Gate minor to manual review; never automerge. Patch bumps and digest-only rebuilds stay in-line and ride docker.json's 'dockerfile bases' group + automerge.json's non-major bundle.",
       "matchDatasources": ["docker"],
       "matchPackageNames": ["ghcr.io/home-assistant/base"],
       "matchUpdateTypes": ["minor"],
