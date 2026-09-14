@@ -27,14 +27,24 @@
       "groupName": "vite"
     },
     {
-      "description": "Vitest stack (engine + coverage + testcontainers + vite peer)",
+      "description": "Tailwind v4 engine + first-party plugins. `tailwindcss` and `@tailwindcss/vite` ship from the tailwindlabs monorepo in exact lockstep (both 4.3.3 in owine/youth-activity-scheduler) and the plugin drives the engine's internal API rather than a stable public one, so a split major is a guaranteed break, not a drift risk. Membership is deliberately narrow. Everything under `@tailwindcss/*` (vite, postcss, cli) is first-party and moves with the engine, but `tailwind-merge` and `tw-animate-css` are THIRD-PARTY and independently released — which is why this is `tailwindcss` plus the scope regex and NOT a `/^tailwind/` regex: that would wrongly swallow `tailwind-merge` and hold a Tailwind major hostage to an unrelated maintainer's cadence. MAJORS ride the group on purpose (no `matchUpdateTypes`), same reasoning as the `testing` rule below.",
+      "matchPackageNames": ["tailwindcss", "/^@tailwindcss//"],
+      "groupName": "tailwind"
+    },
+    {
+      "description": "Vitest stack (engine + every @vitest/* package + testcontainers + vite peer). Scope regex, NOT an allowlist: the previous list named `@vitest/coverage-v8` only, so `@vitest/ui` belonged to no group at all and a single v4->v5 upgrade split into two PRs that were each green in CI and each broken in use — owine/youth-activity-scheduler #421 (vitest 4.1.11 -> 5.0.0, which rode this group's branch as a one-member group, hence the single-dep PR title) and #420 (@vitest/ui 4.1.11 -> 5.0.0, on its own branch). `@vitest/ui` declares an EXACT `vitest` peer, but pnpm 12 warns rather than fails on an unmet peer and resolves `@vitest/ui@4.1.11(vitest@5.0.0)` anyway; `vitest --ui` then dies at startup with `Loaded vitest@5.0.0 and @vitest/ui@4.1.11. Running mixed versions is not supported` followed by `TypeError: Cannot read properties of undefined (reading 'uiBase')`. No CI script passes `--ui`, so install/test/typecheck/lint all passed on both halves and nothing caught it. #420 is the mirror image (v5 UI inside a v4 runner). The fix is the scope regex rather than one more name: a missing group member raises no error anywhere — it just quietly produces a second PR — so there is no signal separating \"correctly ungrouped\" from \"silently fell out\", and an allowlist is exactly what failed here. `/^@vitest//` also picks up `@vitest/browser` and anything else published under the scope. Same hazard documented on docker.json's `github-actions-setup` rule, which remains an allowlist because GitHub Actions have no shared scope to match on. MAJORS: intentionally no `matchUpdateTypes` — the group applies to majors too, which is the whole point, since the break is a major skew. Per the `python runtime` precedent in python.json, grouping decides which deps share a branch, not how it is reviewed: default.json's separateMajorMinor/separateMultipleMajor still isolate the major, and its major rule still applies the 7-day soak, `automerge: false`, `feat:`, and `major-update`/`needs-review` labels.",
       "matchPackageNames": [
         "vitest",
-        "@vitest/coverage-v8",
+        "/^@vitest//",
         "testcontainers",
         "/^@testcontainers//"
       ],
       "groupName": "testing"
+    },
+    {
+      "description": "React Testing Library + its DOM engine. `@testing-library/react` declares a real peer on `@testing-library/dom` (^10) and consumers install the DOM package directly, so the two must cross a major on the same branch or the renderer and the query engine disagree about the DOM API. Deliberately an explicit PAIR, not the `/^@testing-library//` scope regex used for @vitest above: the rest of this neighborhood — `@testing-library/jest-dom`, `@testing-library/user-event`, plus `happy-dom` and `msw` — is INDEPENDENTLY released and shares no version line (7.0.1 / 14.6.7 / 20.14.3 / 2.15.0 in owine/youth-activity-scheduler). Grouping those would be churn reduction, which is a legitimate goal but a different and weaker justification than break prevention, and it would block a genuine peer-pair upgrade behind an unrelated maintainer's release cadence. The scope regex is right for @vitest (one monorepo, one version line) and wrong here; the distinction is the release train, not the naming.",
+      "matchPackageNames": ["@testing-library/react", "@testing-library/dom"],
+      "groupName": "testing-library"
     },
     {
       "description": "ESLint plugins + typescript-eslint. The bare `typescript-eslint` meta-package is unscoped, so the /^@typescript-eslint// regex never matched it — it must be listed explicitly.",
@@ -44,6 +54,11 @@
         "typescript-eslint"
       ],
       "groupName": "eslint plugins"
+    },
+    {
+      "description": "ESLint core + `@eslint/js`. The two are published from the eslint monorepo at the same version on every release, and flat configs import `@eslint/js` for its recommended rule set, so a skew runs one release's rule catalog against another release's engine. Neither could ever have been caught by the `eslint plugins` rule above: that matches `/^eslint-/`, and a scope prefix moves the string start, so the regex cannot match `@eslint/js` by construction — the same class of miss as the bare `typescript-eslint` meta-package noted on that rule. owine/youth-activity-scheduler has already drifted to eslint 10.10.0 against @eslint/js 10.0.1. DELIBERATELY its own group rather than folding the core into `eslint plugins`: plugins carry a peer range on eslint's major, so bundling would put an eslint major AND every plugin's compatibility bump on one branch — an un-reviewable diff that cannot land until the slowest plugin publishes — and renaming `eslint plugins` to cover the core would churn branch names in every consumer for no correctness gain. Named explicitly, NOT `/^@eslint//`: `@eslint/css`, `@eslint/json`, and `@eslint/markdown` are separately-released plugins that merely share the scope, so the scope regex would recreate the bundling this rule avoids (contrast the @vitest rule above, where the whole scope IS one release train). ACCEPTED TRADEOFF: on an eslint major, plugin compat bumps land in a separate PR. That is tolerable here in a way the @vitest/ui split was not — plugins declare a peer RANGE and generally still load across a core major, whereas `@vitest/ui` pins an exact version and hard-asserts on mismatch at startup. Residual risk, not zero risk; the major rule's `needs-review` label is the backstop.",
+      "matchPackageNames": ["eslint", "@eslint/js"],
+      "groupName": "eslint"
     },
     {
       "description": "TypeScript compiler family — TypeScript 7 (the Go port) ships no JS API, so tools needing programmatic compiler access (typescript-eslint, Next.js) require the `@typescript/typescript6` compat package aliased over the `typescript` specifier while a second alias supplies the v7 `tsc` bin. Group them so the side-by-side aliases move coherently. https://github.com/typescript-eslint/typescript-eslint/issues/10940 — see also the \"Running side-by-side with TypeScript 6.0\" section of https://devblogs.microsoft.com/typescript/announcing-typescript-7-0/",
