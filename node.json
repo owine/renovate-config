@@ -132,14 +132,14 @@
       "groupName": "storybook"
     },
     {
-      "description": "PRE-SEEDED. OpenTelemetry JS — the API/SDK/instrumentation packages share a registered global and silently no-op (or throw) across a version boundary; the canonical example of a family that must move as one.",
+      "description": "PRE-SEEDED. OpenTelemetry JS — the API/SDK/instrumentation packages share a registered global and silently no-op (or throw) across a version boundary; the canonical example of a family that must move as one. NAME SUFFIXED `-js` ON PURPOSE: python.json has its own `opentelemetry-python` group, and identical group names would put both ecosystems' OTel updates on one branch in any repo extending :node and :python. See the `aws-sdk-js` rule above for the full reasoning.",
       "matchPackageNames": ["/^@opentelemetry//"],
-      "groupName": "opentelemetry"
+      "groupName": "opentelemetry-js"
     },
     {
-      "description": "PRE-SEEDED. AWS SDK v3 — one monorepo, one version, and clients share middleware/signing internals across packages. Deliberately excludes `/^@smithy//`: it is the separately-versioned runtime layer beneath the SDK, so folding it in would couple two release trains that are only range-compatible.",
+      "description": "PRE-SEEDED. AWS SDK v3 for JS — one monorepo, one version, and clients share middleware/signing internals across packages. Deliberately excludes `/^@smithy//`: it is the separately-versioned runtime layer beneath the SDK, so folding it in would couple two release trains that are only range-compatible. NAME SUFFIXED `-js` ON PURPOSE — do NOT 'tidy' it back to a bare `aws-sdk`. python.json groups boto3/botocore, and a groupName is a BRANCH name: two rules sharing one name share one PR regardless of which manager or file they came from. Since youth-activity-scheduler and claude-terminal-home-assistant extend BOTH :node and :python, a shared name would merge unrelated @aws-sdk/* and boto3 updates into one cross-manager PR — the same coupling explicitly declined for playwright in #90, arrived at through group names instead of package matching. (That name-merging behaviour is load-bearing elsewhere and deliberate: the `playwright` group above shares its name with a repo-local rule in owine/house-manager so the two combine. Same mechanism, opposite intent — which is exactly why it has to be chosen, not inherited.)",
       "matchPackageNames": ["/^@aws-sdk//"],
-      "groupName": "aws-sdk"
+      "groupName": "aws-sdk-js"
     },
     {
       "description": "PRE-SEEDED. tRPC — client/server/adapters are strictly lockstep and the wire contract is not stable across majors.",
