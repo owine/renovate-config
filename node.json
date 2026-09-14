@@ -1,6 +1,6 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "description": "Node/TypeScript ecosystem groupings — peer-dep coupled families that must move together.",
+  "description": "Node/TypeScript ecosystem groupings. MOST rules bundle peer-dep or lockstep-coupled families that must move together, and those say so; a minority (radix-ui, astro, apollo, clerk, supabase) bundle independently-released packages purely for churn reduction or migration coherence, and each of those states that in its own description. Read the rule, not this line, for why any given group exists — an over-broad 'peer-dep' claim here would tell consumers the wrong reason for enabling the preset.",
   "toolSettings": {
     "description": "Cap (MB) for the pnpm/yarn child process Renovate spawns to refresh lockfiles — the usual OOM culprit on Mend-hosted, where NODE_OPTIONS can't be set. 2560 = 2.5GiB; Mend imposes no max beyond the plan, so raise toward that ceiling if runs still OOM. Requires renovate ≥ the version pinned in validate.yml. https://docs.renovatebot.com/mend-hosted/faq/",
     "nodeMaxMemory": 2560
@@ -17,8 +17,8 @@
       "groupName": "tanstack"
     },
     {
-      "description": "Radix UI primitives (shadcn/ui)",
-      "matchPackageNames": ["/^@radix-ui//"],
+      "description": "Radix UI — the unified `radix-ui` package AND the older `@radix-ui/*` scoped primitives. shadcn/ui now generates against the unified package, so most repos will have only that; older repos and half-finished migrations keep some scoped primitives, and a repo mid-migration has BOTH. That last case is the reason this rule lists both forms: `radix-ui` EXACT-pins every primitive it re-exports (1.6.7 depends on `@radix-ui/react-slot` 1.3.3, `@radix-ui/react-menu` 2.1.24 — no carets), so a repo that also direct-installs one of those primitives is holding a pinned transitive. Bump the two apart and pnpm resolves BOTH copies: two Slot implementations with different context identities, and `asChild` composition silently stops working wherever a component from one copy wraps a component from the other. Nothing warns — same shape as the `tesseract.js`/`tesseract.js-core` rule below. CHURN REDUCTION AND MIGRATION COHERENCE, NOT LOCKSTEP — stated plainly so the justification is not overread: the two forms are on visibly different version lines (1.6.7 vs 1.3.3) and are not released together, so this bundles two independently-versioned packages rather than enforcing a shared version. Currently a NO-OP everywhere in the fleet: youth-activity-scheduler/frontend has the unified package alone, owine/house-manager has `@radix-ui/react-slot` alone, so the group has one member in each. It exists for the migration window. `@base-ui/react` is DELIBERATELY NOT HERE despite being shadcn's successor primitive library and sitting next to a leftover `@radix-ui/react-slot` in house-manager: it is a different project with its own release train, and grouping it would be the `tailwind-merge` mistake — catching a package by topical association instead of by release train.",
+      "matchPackageNames": ["radix-ui", "/^@radix-ui//"],
       "groupName": "radix-ui"
     },
     {
