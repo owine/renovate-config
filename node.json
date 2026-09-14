@@ -1,6 +1,6 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "description": "Node/TypeScript ecosystem groupings — peer-dep coupled families that must move together.",
+  "description": "Node/TypeScript ecosystem groupings. MOST rules bundle peer-dep or lockstep-coupled families that must move together, and those say so; a minority (radix-ui, astro, apollo, clerk, supabase) bundle independently-released packages purely for churn reduction or migration coherence, and each of those states that in its own description. Read the rule, not this line, for why any given group exists — an over-broad 'peer-dep' claim here would tell consumers the wrong reason for enabling the preset.",
   "toolSettings": {
     "description": "Cap (MB) for the pnpm/yarn child process Renovate spawns to refresh lockfiles — the usual OOM culprit on Mend-hosted, where NODE_OPTIONS can't be set. 2560 = 2.5GiB; Mend imposes no max beyond the plan, so raise toward that ceiling if runs still OOM. Requires renovate ≥ the version pinned in validate.yml. https://docs.renovatebot.com/mend-hosted/faq/",
     "nodeMaxMemory": 2560

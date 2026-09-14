@@ -1,6 +1,6 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "description": "Python ecosystem groupings (pep621/uv/poetry). Peer-dep coupled stacks bundled together.",
+  "description": "Python ecosystem groupings (pep621/uv/poetry). Most rules bundle peer-dep or hard-pinned stacks that must move together (boto3/botocore is the strictest); scientific-python is explicitly churn reduction rather than break prevention. Each rule states which it is.",
   "pep621": { "enabled": true },
   "packageRules": [
     {
