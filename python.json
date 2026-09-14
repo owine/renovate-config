@@ -44,6 +44,54 @@
       "groupName": "lint + types tooling"
     },
     {
+      "description": "boto3 + botocore + the transfer/async siblings. botocore is HARD-PINNED by boto3 to a narrow range (boto3 1.x.y requires botocore >=1.3x.y,<1.3x.y+1), so a split major is not a drift risk — it is an immediate unsatisfiable-resolution failure on whichever half lands first. The strongest coupling in this file. `aiobotocore` and `s3transfer` pin botocore the same way.",
+      "matchManagers": ["pep621"],
+      "matchPackageNames": ["boto3", "botocore", "aiobotocore", "s3transfer"],
+      "groupName": "aws-sdk"
+    },
+    {
+      "description": "PyTorch trio — torchvision and torchaudio are compiled against an exact torch version and are published per torch release; a split leaves a binary extension linked to a torch ABI that is no longer installed, which surfaces as an import-time symbol error rather than a resolver failure.",
+      "matchManagers": ["pep621"],
+      "matchPackageNames": ["torch", "torchvision", "torchaudio"],
+      "groupName": "pytorch"
+    },
+    {
+      "description": "LangChain — `langchain`, `langchain-core`, and the `langchain-*` provider packages all pin langchain-core and move on one release cadence; the core interfaces change across minors, so even a non-major skew can break provider imports.",
+      "matchManagers": ["pep621"],
+      "matchPackageNames": ["langchain", "/^langchain-/", "langsmith"],
+      "groupName": "langchain"
+    },
+    {
+      "description": "OpenTelemetry Python — api/sdk/exporters/instrumentation share a registered global provider and are published as one release set; mixing versions silently drops spans. Mirrors the `/^@opentelemetry//` rule in node.json.",
+      "matchManagers": ["pep621"],
+      "matchPackageNames": ["/^opentelemetry-/"],
+      "groupName": "opentelemetry"
+    },
+    {
+      "description": "Celery + its transport/execution stack — kombu, billiard, and vine are cut per celery release and pinned narrowly by it. NOTE the `matchManagers: [pep621]` scope is load-bearing here beyond this file's convention: `vine` is ALSO a real npm package name, and a consumer extending both :node and :python would otherwise have an unrelated JS package pulled into the Celery group — the same cross-ecosystem accident the playwright rule in node.json guards against with matchDatasources.",
+      "matchManagers": ["pep621"],
+      "matchPackageNames": ["celery", "kombu", "billiard", "vine"],
+      "groupName": "celery"
+    },
+    {
+      "description": "PRE-SEEDED. Django + DRF + the django-* plugin ecosystem: plugins declare their supported Django major and are re-cut per Django LTS, so a core major without its plugins fails at app-registry load. The `/^django-/` regex covers third-party plugins, which is acceptable here (unlike the tailwind-merge case in node.json) because the django-* prefix is a community convention specifically for Django-version-coupled packages.",
+      "matchManagers": ["pep621"],
+      "matchPackageNames": ["django", "djangorestframework", "/^django-/"],
+      "groupName": "django"
+    },
+    {
+      "description": "PRE-SEEDED. Hugging Face stack — transformers pins tokenizers to a narrow range and both track huggingface-hub's API; datasets and accelerate follow the same cadence.",
+      "matchManagers": ["pep621"],
+      "matchPackageNames": ["transformers", "tokenizers", "huggingface-hub", "datasets", "accelerate"],
+      "groupName": "huggingface"
+    },
+    {
+      "description": "PRE-SEEDED. numpy + scipy + pandas. CHURN REDUCTION, NOT BREAK PREVENTION — stated plainly so the justification is not misread: these are independent projects and a split major usually resolves fine. They are grouped only because scipy and pandas compile against numpy's C ABI, so a numpy major is the event that drags the other two, and reviewing them on three branches hides that. Do NOT extend this rule to the wider scientific stack on the same reasoning.",
+      "matchManagers": ["pep621"],
+      "matchPackageNames": ["numpy", "scipy", "pandas"],
+      "groupName": "scientific-python"
+    },
+    {
       "description": "Don't track `python` via the native pep621 manager — `requires-python` is normally a min-version metadata range (`>=3.10`), not a runtime pin, so the pep621 view of it must not bump. Exact `==X.Y.Z` pins ARE tracked, but via the custom manager below + the `python-version` datasource, which surfaces a separate `python` dep that this rule does not touch.",
       "matchManagers": ["pep621"],
       "matchDepNames": ["python"],

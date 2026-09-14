@@ -61,6 +61,37 @@
       "groupName": "eslint"
     },
     {
+      "description": "Next.js core + first-party plugins + `eslint-config-next`. The config is version-locked to the framework (16.3.5 ships against next 16.x) rather than peer-ranged — its declared `eslint` peer is a loose `>=9.0.0`, so nothing in the resolver stops a stale config sitting against a new Next major while silently missing that major's lint rules. MUST stay ordered AFTER the `eslint plugins` rule above: `eslint-config-next` matches that rule's `/^eslint-/`, and last matching rule wins, so moving this rule earlier would hand the config back to `eslint plugins` and re-split it from the framework it tracks.",
+      "matchPackageNames": ["next", "/^@next//", "eslint-config-next"],
+      "groupName": "next.js"
+    },
+    {
+      "description": "Playwright npm family — the runner, the driver, and the a11y binding all ride one release train. `@axe-core/playwright` peers on `playwright-core` (`>= 1.0.0`), and `@playwright/test` bundles a driver whose version must match the browser binaries installed by `playwright install`, so a split major leaves the runner and its browsers disagreeing. SCOPED TO `matchDatasources: [npm]` AND THAT IS LOAD-BEARING, NOT DECORATION: PyPI publishes a `playwright` package under the identical name, and owine/youth-activity-scheduler extends BOTH :node and :python, so an unscoped rule here would reach across into pep621 and build the cross-manager group that was deliberately DECLINED in #90 (separate browser-binary installs, separate purposes, and grouping across two registries means neither half lands until both publish). Deliberately named `playwright` to match the pre-existing repo-local rule in owine/house-manager, which adds `mcr.microsoft.com/playwright` to the same group name — a docker-image coupling that is real in that repo only and correctly stays repo-local. Identical group names merge rather than fight, so that rule keeps working unchanged.",
+      "matchDatasources": ["npm"],
+      "matchPackageNames": ["playwright", "playwright-core", "@playwright/test", "@axe-core/playwright"],
+      "groupName": "playwright"
+    },
+    {
+      "description": "react-hook-form + its resolver adapters — `@hookform/resolvers` declares a hard peer on `react-hook-form` (^7.55.0) and re-exports its types, so a major skew is a type-level break. `zod` is INTENTIONALLY NOT HERE despite also being a declared peer of the resolvers package: zod is a standalone validator used by six fleet repos that have no forms layer at all (the MCP servers, doc-scanner/server, house-manager), so grouping it would drag an unrelated major into every forms PR and vice versa. The resolvers package peers on ~25 validators; following that peer list into groupings would collapse half of npm into one branch.",
+      "matchPackageNames": ["react-hook-form", "/^@hookform//"],
+      "groupName": "react-hook-form"
+    },
+    {
+      "description": "Stylelint + its shareable configs — `stylelint-config-standard` declares a hard `stylelint` peer (^17.0.0) and configs are cut per stylelint major, so a split major fails the lint run outright rather than degrading. Mirrors the `eslint` / `eslint plugins` split above in shape, but is deliberately ONE group rather than two: the stylelint config ecosystem is a short chain (standard -> recommended) rather than eslint's broad plugin surface, so there is no un-reviewable-diff hazard to separate for.",
+      "matchPackageNames": ["stylelint", "/^stylelint-/"],
+      "groupName": "stylelint"
+    },
+    {
+      "description": "tesseract.js + its wasm core — `tesseract.js` carries `tesseract.js-core` as a caret dependency (^7.0.0), and doc-scanner/pwa installs BOTH directly so it can control the wasm asset path. Direct-installing a transitive is what creates the hazard: on a split major the JS wrapper resolves its own nested core while the app loads the hoisted one, giving two wasm runtimes. Not a peer declaration, so nothing warns.",
+      "matchPackageNames": ["tesseract.js", "tesseract.js-core"],
+      "groupName": "tesseract.js"
+    },
+    {
+      "description": "Sentry SDKs — every `@sentry/*` package is published from one monorepo at one version, and the platform packages (`@sentry/node`, `@sentry/nextjs`) share a `@sentry/core` singleton that throws on a version mismatch at init. Whole-scope regex is correct here for the same reason it is correct for `@vitest/*` and wrong for `@eslint/*`: the scope IS the release train, with no third-party publishers inside it.",
+      "matchPackageNames": ["/^@sentry//"],
+      "groupName": "sentry"
+    },
+    {
       "description": "TypeScript compiler family — TypeScript 7 (the Go port) ships no JS API, so tools needing programmatic compiler access (typescript-eslint, Next.js) require the `@typescript/typescript6` compat package aliased over the `typescript` specifier while a second alias supplies the v7 `tsc` bin. Group them so the side-by-side aliases move coherently. https://github.com/typescript-eslint/typescript-eslint/issues/10940 — see also the \"Running side-by-side with TypeScript 6.0\" section of https://devblogs.microsoft.com/typescript/announcing-typescript-7-0/",
       "matchPackageNames": ["typescript", "@typescript/typescript6"],
       "groupName": "typescript"
@@ -94,6 +125,86 @@
       "description": "Cloudflare Workers toolchain — wrangler + workers-types + workers SDKs travel together",
       "matchPackageNames": ["wrangler", "/^@cloudflare//", "miniflare"],
       "groupName": "cloudflare-workers"
+    },
+    {
+      "description": "PRE-SEEDED, NOT YET IN THE FLEET. The rules from here to the end of this block cover ecosystems no owine repo installs today; they exist so that the FIRST repo to adopt one is grouped correctly on day one rather than discovering the split the way owine/youth-activity-scheduler#420/#421 did. A rule that matches nothing costs nothing at resolve time, and this preset already carries forward-looking entries on the same logic (see the node-lts-26 lane at the bottom of this file). Each is a single scope or release train verified to publish in lockstep; the soft ones are labelled as churn reduction rather than break prevention so a future reader does not mistake the justification. Storybook: every @storybook/* package is one monorepo release and the framework/builder/addon triple asserts on mismatch at boot.",
+      "matchPackageNames": ["storybook", "/^@storybook//"],
+      "groupName": "storybook"
+    },
+    {
+      "description": "PRE-SEEDED. OpenTelemetry JS — the API/SDK/instrumentation packages share a registered global and silently no-op (or throw) across a version boundary; the canonical example of a family that must move as one.",
+      "matchPackageNames": ["/^@opentelemetry//"],
+      "groupName": "opentelemetry"
+    },
+    {
+      "description": "PRE-SEEDED. AWS SDK v3 — one monorepo, one version, and clients share middleware/signing internals across packages. Deliberately excludes `/^@smithy//`: it is the separately-versioned runtime layer beneath the SDK, so folding it in would couple two release trains that are only range-compatible.",
+      "matchPackageNames": ["/^@aws-sdk//"],
+      "groupName": "aws-sdk"
+    },
+    {
+      "description": "PRE-SEEDED. tRPC — client/server/adapters are strictly lockstep and the wire contract is not stable across majors.",
+      "matchPackageNames": ["/^@trpc//"],
+      "groupName": "trpc"
+    },
+    {
+      "description": "PRE-SEEDED. Drizzle — `drizzle-kit` reads schema files against `drizzle-orm` internals, so a skew breaks migration generation rather than the app, which means CI on the app side can pass while `drizzle-kit generate` is broken. Same silent-on-CI shape as the @vitest/ui break.",
+      "matchPackageNames": ["drizzle-orm", "drizzle-kit"],
+      "groupName": "drizzle"
+    },
+    {
+      "description": "PRE-SEEDED. NestJS — core/common/platform packages are one release train with peer ranges on each other.",
+      "matchPackageNames": ["/^@nestjs//"],
+      "groupName": "nestjs"
+    },
+    {
+      "description": "PRE-SEEDED. Babel — @babel/core and its presets/plugins share internal AST contracts across one monorepo release.",
+      "matchPackageNames": ["/^@babel//"],
+      "groupName": "babel"
+    },
+    {
+      "description": "PRE-SEEDED. SWC — @swc/core and its bindings/helpers are version-matched, and the native binding is compiled against a specific core.",
+      "matchPackageNames": ["/^@swc//"],
+      "groupName": "swc"
+    },
+    {
+      "description": "PRE-SEEDED. Jest family — jest, its @jest/* internals, and the transform/environment adapters (`ts-jest`, `babel-jest`, `jest-environment-jsdom`) are cut per jest major and peer on it. Listed explicitly rather than by a `/^jest-/` regex, which would sweep in unrelated third-party `jest-*` matchers and reporters that are not lockstep.",
+      "matchPackageNames": ["jest", "/^@jest//", "ts-jest", "babel-jest", "jest-environment-jsdom"],
+      "groupName": "jest"
+    },
+    {
+      "description": "PRE-SEEDED. Astro + first-party integrations. CHURN REDUCTION more than break prevention: @astrojs/* integrations are separately versioned and peer-ranged on astro rather than lockstep, so a split is usually survivable — grouped because an Astro major reliably drags every integration with it and reviewing them apart is noise.",
+      "matchPackageNames": ["astro", "/^@astrojs//"],
+      "groupName": "astro"
+    },
+    {
+      "description": "PRE-SEEDED. Nuxt + @nuxt/kit + @nuxt/schema — these ARE lockstep with the framework release (unlike the Astro case above), and modules resolve @nuxt/kit at build time.",
+      "matchPackageNames": ["nuxt", "/^@nuxt//"],
+      "groupName": "nuxt"
+    },
+    {
+      "description": "PRE-SEEDED. SvelteKit + adapters + the vite plugin. DELIBERATELY EXCLUDES bare `svelte`: the compiler and SvelteKit are SEPARATE release trains (svelte 5 vs kit 2), so grouping them would force two unrelated majors onto one branch. The @sveltejs/* scope alone is the real lockstep unit — adapters peer on kit's major. Pre-seeding a wrong grouping is worse than pre-seeding none, which is why this one is scope-only.",
+      "matchPackageNames": ["/^@sveltejs//"],
+      "groupName": "sveltekit"
+    },
+    {
+      "description": "PRE-SEEDED. Expo SDK — `expo` and the `expo-*` modules are released as one numbered SDK; mixing module versions across an SDK line is explicitly unsupported upstream.",
+      "matchPackageNames": ["expo", "/^expo-/"],
+      "groupName": "expo"
+    },
+    {
+      "description": "PRE-SEEDED. Apollo + graphql. CHURN REDUCTION: @apollo/* packages peer on `graphql` as a wide range rather than pinning it, so a split rarely breaks — grouped because a graphql major is the thing that forces the Apollo bump, and seeing them apart hides that causality.",
+      "matchPackageNames": ["graphql", "/^@apollo//"],
+      "groupName": "apollo"
+    },
+    {
+      "description": "PRE-SEEDED. Clerk SDKs. CHURN REDUCTION: @clerk/* packages share a backend API contract and are usually released together, but the framework bindings carry independent version lines, so this prevents PR noise rather than a guaranteed break.",
+      "matchPackageNames": ["/^@clerk//"],
+      "groupName": "clerk"
+    },
+    {
+      "description": "PRE-SEEDED. Supabase SDKs. CHURN REDUCTION, same shape as the Clerk rule: supabase-js bundles the sub-clients (postgrest/realtime/storage/gotrue) as regular dependencies, so direct-installing several of them is the only way a skew appears — and when it does it behaves like the tesseract.js-core case above rather than a hard peer failure.",
+      "matchPackageNames": ["/^@supabase//"],
+      "groupName": "supabase"
     },
     {
       "description": "Node + pnpm toolchain — engines, packageManager, .nvmrc, Dockerfile `FROM node:X`, and the Dockerfile `ARG PNPM_VERSION` custom manager all move in lockstep. A repo with engineStrict CANNOT build with these split: the Dockerfile pins one Node and package.json demands another, so `pnpm install --frozen-lockfile` fails ERR_PNPM_UNSUPPORTED_ENGINE on BOTH halves and neither PR can go green alone. The lockstep is only real because docker.json's `dockerfile bases` rule negates these same names — it matches `matchManagers: [dockerfile]` and consumers extend `:node` before `:docker`, so the later preset would otherwise win the groupName and pull `FROM node:X` out. Keep this list and that negation in sync. (`ARG PNPM_VERSION` needs no carve-out there: it is a `custom.regex` manager, not `dockerfile`, so `dockerfile bases` never matched it — it reaches this group via its `pnpm` depNameTemplate.) The fully-qualified `docker.io/library/node` form is listed because `FROM docker.io/library/node:X` yields that depName rather than the bare `node`; it is a plain string (glob-matched, `.`/`/` literal) so it matches exactly and does not catch `nodered/node-red` or the like.",
