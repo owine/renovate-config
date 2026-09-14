@@ -44,10 +44,10 @@
       "groupName": "lint + types tooling"
     },
     {
-      "description": "boto3 + botocore + the transfer/async siblings. botocore is HARD-PINNED by boto3 to a narrow range (boto3 1.x.y requires botocore >=1.3x.y,<1.3x.y+1), so a split major is not a drift risk — it is an immediate unsatisfiable-resolution failure on whichever half lands first. The strongest coupling in this file. `aiobotocore` and `s3transfer` pin botocore the same way.",
+      "description": "boto3 + botocore + the transfer/async siblings. botocore is HARD-PINNED by boto3 to a narrow range (boto3 1.x.y requires botocore >=1.3x.y,<1.3x.y+1), so a split major is not a drift risk — it is an immediate unsatisfiable-resolution failure on whichever half lands first. The strongest coupling in this file. `aiobotocore` and `s3transfer` pin botocore the same way. NAMED `boto3`, NOT `aws-sdk` — do NOT rename it to match node.json's AWS group. A groupName is a branch name, so two rules sharing one name share one PR even across managers and preset files; since youth-activity-scheduler and claude-terminal-home-assistant extend BOTH :node and :python, a shared `aws-sdk` name would merge unrelated @aws-sdk/* and boto3 updates into a single cross-manager PR. The `matchManagers` scope below does NOT prevent this: it controls which deps MATCH, not which branch they land on.",
       "matchManagers": ["pep621"],
       "matchPackageNames": ["boto3", "botocore", "aiobotocore", "s3transfer"],
-      "groupName": "aws-sdk"
+      "groupName": "boto3"
     },
     {
       "description": "PyTorch trio — torchvision and torchaudio are compiled against an exact torch version and are published per torch release; a split leaves a binary extension linked to a torch ABI that is no longer installed, which surfaces as an import-time symbol error rather than a resolver failure.",
@@ -62,10 +62,10 @@
       "groupName": "langchain"
     },
     {
-      "description": "OpenTelemetry Python — api/sdk/exporters/instrumentation share a registered global provider and are published as one release set; mixing versions silently drops spans. Mirrors the `/^@opentelemetry//` rule in node.json.",
+      "description": "OpenTelemetry Python — api/sdk/exporters/instrumentation share a registered global provider and are published as one release set; mixing versions silently drops spans. Mirrors the `/^@opentelemetry//` rule in node.json in intent, but the group name is deliberately DIFFERENT from it (`opentelemetry-js` there) — see the `boto3` rule above for why a shared name would merge the two ecosystems onto one branch.",
       "matchManagers": ["pep621"],
       "matchPackageNames": ["/^opentelemetry-/"],
-      "groupName": "opentelemetry"
+      "groupName": "opentelemetry-python"
     },
     {
       "description": "Celery + its transport/execution stack — kombu, billiard, and vine are cut per celery release and pinned narrowly by it. NOTE the `matchManagers: [pep621]` scope is load-bearing here beyond this file's convention: `vine` is ALSO a real npm package name, and a consumer extending both :node and :python would otherwise have an unrelated JS package pulled into the Celery group — the same cross-ecosystem accident the playwright rule in node.json guards against with matchDatasources.",
