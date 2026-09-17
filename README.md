@@ -33,8 +33,8 @@ Only extend the ecosystem presets a repo actually uses. Extend `:mcp` *after* `:
 | `python.json` | pep621 ecosystem groupings (mostly peer-dep/hard-pinned; `scientific-python` is churn reduction): FastAPI stack, Pydantic, SQLAlchemy stack, pytest, lint/types tooling, boto3+botocore (hard pin), PyTorch trio, LangChain, OpenTelemetry, Celery (`vine` is also an npm name — the `matchManagers` scope is load-bearing), plus pre-seeded Django, Hugging Face, and numpy/scipy/pandas. Plus a `python runtime` group binding an exact-pinned `requires-python` (via customManager) to the `python` Docker base image — **needs a manual `uv lock` commit**, see Consumer notes. |
 | `docker.json` | Dockerfile base bundling, GH Actions setup/artifact/docker families, runtime-major flags. The `dockerfile bases` group **excludes the language-runtime images** (`node`/`pnpm`/`python`, both bare and `docker.io/library/…` spellings) so they stay with their own runtime groups — see Consumer notes. |
 | `mcp.json` | MCP server repos: isolate `@modelcontextprotocol/sdk` for manual review (`feat:` prefix), keep `engines.node` unpinned for library consumers. Extend after `node.json`. |
-| `alpine.json` | Alpine updates. apk pins (**custom Alpine-CDN datasource**, `custom.alpine`): one `alpine packages` group, 0-day soak, runs any time, **automerges every non-major bump (patch/pin/digest/minor) together**. Gates **`node:*-alpine` image bumps** (minor/patch) to manual review. Also gates **alpine base-image (`docker`) minor bumps** to manual review (the base-image patch line automerges). Carved out of `automerge.json`'s bundle — extend after it (and after `docker.json`). **Requires a consumer-side customManager** (see Consumer notes). |
-| `home-assistant.json` | Home Assistant add-on repos. Pins the HA base image (`ghcr.io/home-assistant/base`) to a versioned tag + digest and gates its **minor bumps** to manual review (the tag *is* the Alpine line, so a bump means hand-editing the `alpine_X_Y/` template that also drives the CDN registry URL); digest rebuilds automerge. Adds CalVer versioning for the `home-assistant/builder` action. Extend after `:automerge`/`:docker` (and `:alpine` if used). |
+| `alpine.json` | Alpine updates. apk pins (**built-in `apk` datasource**, extracted from `RUN apk add` by the dockerfile manager since Renovate 44.97.1): one `alpine packages` group, 0-day soak, runs any time, **automerges every non-major bump (patch/pin/digest/minor) together**, and forces `rangeStrategy: replace` (without it every drifted pin goes silently dark). Gates **`node:*-alpine` image bumps** (minor/patch) to manual review. Also gates **alpine base-image (`docker`) minor bumps** to manual review (the base-image patch line automerges). Carved out of `automerge.json`'s bundle **and** of `docker.json`'s `dockerfile bases` group — extend after both. **Requires a consumer-side `registryUrls`** naming the Alpine release line (see Consumer notes). |
+| `home-assistant.json` | Home Assistant add-on repos. Pins the HA base image (`ghcr.io/home-assistant/base`) to a versioned tag + digest and gates its **minor bumps** to manual review (the tag *is* the Alpine line, so a bump means hand-editing the `branch=vX.Y` in the consumer's apk `registryUrls`); digest rebuilds automerge. Adds CalVer versioning for the `home-assistant/builder` action. Extend after `:automerge`/`:docker` (and `:alpine` if used). |
 
 ## Commit types & release-please
 
@@ -67,103 +67,98 @@ Rule precedence (last match wins) is: catch-all `*` → `deps` → lock file mai
 
 ## Consumer notes & caveats
 
-- **`alpine.json` is packageRules-only.** It acts only on dependencies already
-  classified `datasource: custom.alpine`. The preset supplies the datasource
-  itself (a `customDatasources` entry reading Alpine's package index on
-  `dl-cdn.alpinelinux.org`); the consuming repo must define the
-  `customManager` that detects `pkg=version` apk pins in its Dockerfile and
-  templates `datasource=custom.alpine` with
-  `depName=alpine_<major>_<minor>/{{package}}` (e.g. `alpine_3_24/{{package}}`).
-  Reference regex:
+- **`alpine.json` is packageRules-only, and apk extraction is now built in.**
+  Since Renovate **44.97.1** the `dockerfile` manager extracts
+  `RUN apk add pkg=version` pins by itself, as `datasource: apk` /
+  `depType: install`
+  ([#45691](https://github.com/renovatebot/renovate/pull/45691)). The
+  consumer-side `customManager`, the preset's `customDatasources` block, the
+  `alpine_X_Y/` `depNameTemplate` and the `extractVersionTemplate` are all
+  **gone** — delete them. Verified across the fleet at 44.97.1: the built-in
+  extractor finds exactly the same 40 pins the regex did, in all five consumer
+  repos, with no dep on either side only.
+
+  One thing the consumer must still supply: the registry URL naming its Alpine
+  release line. The datasource's default is
+  `branch=latest-stable&components=main`, which does **not** follow your base
+  image.
 
   ```json
   {
-    "customType": "regex",
-    "managerFilePatterns": ["/Dockerfile$/"],
-    "matchStringsStrategy": "any",
-    "matchStrings": ["\\s\\s(?<package>[a-z0-9][a-z0-9-_]+)=(?<currentValue>[a-z0-9-_.]+)\\s+"],
-    "versioningTemplate": "loose",
-    "datasourceTemplate": "custom.alpine",
-    "depNameTemplate": "alpine_3_24/{{package}}",
-    "extractVersionTemplate": "^{{{package}}}-(?<version>\\d.*)\\.apk$"
+    "matchDatasources": ["apk"],
+    "registryUrls": ["https://dl-cdn.alpinelinux.org/alpine?branch=v3.24&components=main,community&arch=x86_64"]
   }
   ```
 
-  Three details are load-bearing. The datasource name **must** be
-  `custom.alpine` — the preset both matches on that name and parses the Alpine
-  release line out of the `alpine_X_Y/` prefix to build the registry URL, so a
-  repo that names it anything else silently drops out of every Alpine rule. The
-  `\d` anchor in `extractVersionTemplate` is what stops `gd` from matching
-  `gd-dev-2.3.3-r10.apk` in the same directory listing. And `{{{package}}}`
-  must be triple-stashed, or the package name is HTML-escaped into the regex.
+  The branch must be a **literal**: Handlebars in `registryUrls` is
+  custom-datasource-only (`datasource/custom/utils.js`), so the old
+  derive-it-from-the-depName trick cannot work for a built-in datasource. Renovate
+  builds `<base>/<branch>/<component>/<arch>/APKINDEX.tar.gz` from the query
+  params and rejects any unknown param, so a typo fails loudly. Upstream
+  [#45706](https://github.com/renovatebot/renovate/issues/45706) will auto-detect
+  this from the base image; when it lands, this rule can be deleted outright.
 
-  Adjust `managerFilePatterns` to match your Dockerfile's path (the example matches any file ending in `Dockerfile`). The `\s\s` anchor in `matchStrings` assumes apk pins are indented by exactly two spaces (typical of a line-continued `RUN apk add` block); widen it to `\s+` or anchor on `RUN apk add` if your Dockerfile uses a different style, or the pins will be silently skipped.
+- **`main` and `community` go in ONE url, and the silent-miss trap is gone.**
+  The `apk` datasource uses `registryStrategy: "merge"` (the opposite of custom
+  datasources' `"first"`), so `components=main,community` fetches both indexes
+  and aggregates the releases. A community package no longer needs its own
+  override, and can no longer be silently untracked by being pointed at `main`.
+  Verified: all 19 pins in `claude-terminal-home-assistant` — including the six
+  community ones (`npm`, `py3-aiohttp`, `py3-beautifulsoup4`, `ttyd`, `vim`,
+  `yq-go`) — resolve from the single merged URL. A component that simply does
+  not carry a package logs a harmless per-component
+  `No matching packages found` at debug level.
 
-- **Packages in Alpine's `community` repository need a consumer-side override,
-  and a missing one fails *silently*.** The preset's default registry URL points
-  at `main`. Custom datasources use `registryStrategy: "first"`, so an override
-  **replaces** that URL rather than adding to it — listing both warns
-  `Excess registryUrls found for datasource lookup` and uses only the first.
-  Derive the release line the same way the preset does, so an Alpine bump stays
-  a one-line edit:
+- **`rangeStrategy` must be `replace` for apk — the preset forces it, do not
+  undo it.** `default.json` sets a top-level `rangeStrategy: "pin"`. The
+  `dockerfile` manager *supports* `pin` (it pins base-image digests), so apk
+  deps inherit it; the old `custom.regex` manager does not support `pin` and
+  silently fell back to `replace`, which is why this never surfaced before. It
+  matters because an APKINDEX carries **only the newest build** of each package:
+  a pin that has already drifted is absent from the release list, and
+  `getCurrentVersion`'s `pin` branch then returns `null`, so Renovate logs
+  `No currentVersion or lockedVersion found`, sets `skipReason: invalid-value`
+  and proposes **nothing**. The pins that most need an update are exactly the
+  ones that would go dark. Only the `replace` branch reaches the
+  `isVersion(currentValue) → currentValue` fallback. Measured on 44.97.1 against
+  `nut-cgi`: under `pin`, its stale `curl` and `openssl` pins produced no
+  updates; under `replace`, they produce the same bumps the retired
+  `custom.alpine` datasource did.
 
-  ```json
-  {
-    "matchDatasources": ["custom.alpine"],
-    "matchPackageNames": ["/^alpine_.*/(tini|ttyd|vim)$/"],
-    "registryUrls": ["https://dl-cdn.alpinelinux.org/alpine/v{{ replace '_' '.' (replace 'alpine_' '' (lookup (split packageName '/') 0)) }}/community/x86_64/"]
-  }
-  ```
+- **The Alpine release line now lives in `registryUrls`, and is still
+  unmanaged.** When a repo bumps its Alpine base image (`3.24` → `3.25`) it must
+  hand-edit `branch=v3.24` → `branch=v3.25`. That is one edit, in one place, per
+  repo — and it is repo-specific, which is why it is not in the shared preset.
+  To protect the coupling, `alpine.json` gates **base-image `minor` bumps**
+  (`datasource: docker`, `packageName: alpine`) to manual review — they are the
+  ones that cross release lines and demand the hand-edit. Base-image `patch`
+  bumps stay within the line, leave the URL valid, and automerge normally. The
+  same gate exists in `home-assistant.json` for `ghcr.io/home-assistant/base`,
+  whose tag *is* the Alpine line.
 
-  A package pointed at the wrong index is **silently untracked**: the index
-  fetch succeeds, no `href` matches `extractVersion`, and Renovate reports no
-  update, **no warning and no Dependency Dashboard entry**. It stops receiving
-  bumps until Alpine purges the pinned build and the Docker build goes red.
-  So check the index whenever you add an apk pin:
+- **Verify a new apk pin by its `currentVersion`, never by dep count.** A
+  package that is absent from every listed component yields no releases and no
+  update; the dep count is unchanged either way, because it comes from the
+  Dockerfile, not from the lookup. Assert instead that every `apk` dep in
+  `renovate --platform=local --dry-run=full` output carries a non-null
+  `currentVersion`. To check membership directly:
 
   ```bash
-  PKG=tini; LINE=3.24
+  PKG=tini; LINE=v3.24
   for R in main community; do
-    hit=$(curl -s "https://dl-cdn.alpinelinux.org/alpine/v$LINE/$R/x86_64/" \
-          | grep -oE "\"$PKG-[0-9][^\"]*" | tr -d '"')
+    hit=$(curl -s "https://dl-cdn.alpinelinux.org/alpine/$LINE/$R/x86_64/APKINDEX.tar.gz" \
+          | tar -xzO APKINDEX 2>/dev/null | grep -A1 "^P:$PKG$" | grep '^V:' | head -1)
     printf '%-10s %s\n' "$R" "${hit:--}"
   done
   ```
 
-  Don't reach for a `grep … | sed … || echo '-'` pipeline here: the exit status
-  is `sed`'s, so a miss prints nothing *and no newline*, and the two labels run
-  together as `main       community  tini-…` — which reads as a hit under
-  `main` and produces exactly the missing override this check exists to prevent.
-
-- **`no-result` does not mean what it looks like.** A lookup failure surfaces on
-  the Dependency Dashboard as:
-
-  ```
-  Failed to look up custom.alpine package alpine_3_24/tini: no-result
-  ```
-
-  That single message covers a wrong Alpine release line (the derived URL 404s),
-  a genuinely absent package, **and** a transient CDN 5xx — so it is not proof
-  of a config typo. Check the URL Renovate actually built before changing
-  config: `https://dl-cdn.alpinelinux.org/alpine/v<line>/main/x86_64/`. Note the
-  distinct and more dangerous case above: a package in the *wrong* index
-  produces **no** message at all. Upstream
-  [renovatebot/renovate#40250](https://github.com/renovatebot/renovate/pull/40250)
-  adds a first-class APK datasource; when it ships, `custom.alpine` becomes a
-  one-line swap per repo and the `customDatasources` block goes away.
-
-- **The Alpine version in `depNameTemplate` is repo-specific and unmanaged —
-  and it now drives the registry URL too.** When a repo bumps its Alpine base
-  image (e.g. `3.24` → `3.25`), it must hand-edit `alpine_3_24/` →
-  `alpine_3_25/` in its own customManager. The preset derives the CDN URL from
-  that prefix, so this stays exactly **one** edit — including for repos with a
-  community override, which derives the same prefix. Get it wrong and lookups
-  404 with `no-result`. This repo-specific knob is exactly why the customManager
-  is **not** shipped in the shared preset. To protect the coupling,
-  `alpine.json` gates **base-image `minor` bumps** (`datasource: docker`,
-  `packageName: alpine`) to manual review — they're the ones that cross release
-  lines and demand the hand-edit. Base-image `patch` bumps stay within the line,
-  leave the template valid, and automerge normally.
+  Renovate also skips, with a logged reason, pins it cannot act on: an
+  unversioned `apk add bash` (`unspecified-version`), a version from a variable
+  (`contains-variable`), and a range constraint such as `curl=~8.12.1`
+  (`unsupported-version` — fuzzy constraints are
+  [#45693](https://github.com/renovatebot/renovate/pull/45693), still open).
+  Virtual packages (`--virtual .build-deps`), local `.apk` files and provider
+  deps (`so:`, `cmd:`) are ignored outright.
 
 - **`node:*-alpine` bumps are gated to manual review.** A repo whose Alpine line
   comes from the Node image (`node:24.19.0-alpine` is Alpine 3.24.1) has the
@@ -245,12 +240,12 @@ Rule precedence (last match wins) is: catch-all `*` → `deps` → lock file mai
 - **`home-assistant.json` is opt-in for HA add-on repos.** It pins
   `ghcr.io/home-assistant/base` (tag + digest) and gates its `minor` bumps to
   manual review for the same reason as the alpine base image: the HA base tag
-  *is* the Alpine release line, so a bump forces the `alpine_X_Y/`
-  `depNameTemplate` hand-edit. It also gives the `home-assistant/builder` action
+  *is* the Alpine release line, so a bump forces the `branch=vX.Y` hand-edit in
+  the consumer's apk `registryUrls`. It also gives the `home-assistant/builder` action
   CalVer (`YYYY.MM.PATCH`) versioning. Extend it late, after `:docker`.
 
 - **Major apk bumps fall through to `default.json`.** `alpine.json`'s apk group
   matches only `patch`/`pin`/`digest`/`minor` (all automerged together), so a major
   bump is handled by the baseline major rule (7-day soak, `automerge: false`,
-  `needs-review`). Rare in practice — the CDN datasource seldom classifies an apk bump as
-  major.
+  `needs-review`). Rare in practice — `apk` versioning seldom classifies an apk
+  bump as major.
