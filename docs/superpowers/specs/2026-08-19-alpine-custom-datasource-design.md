@@ -1,7 +1,19 @@
 # Alpine apk pins: Repology → custom CDN datasource — design
 
 Date: 2026-08-19
-Status: Implemented. Phase 1 merged as owine/renovate-config#79; all five
+Status: **SUPERSEDED 2026-09-17** by the built-in `apk` datasource
+(renovatebot/renovate#45691, shipped in 44.97.1), which extracts `RUN apk add`
+pins in the dockerfile manager itself. `custom.alpine`, the consumer-side
+customManager and the community `registryUrls` overrides are all retired; each
+consumer now carries one `registryUrls` naming its Alpine release line
+(`?branch=v3.24&components=main,community&arch=x86_64`), which
+renovatebot/renovate#45706 will eventually make unnecessary. See
+owine/renovate-config#99. Note the trap that migration surfaced: apk deps
+inherit `default.json`'s global `rangeStrategy: pin`, under which every drifted
+pin resolves to no `currentVersion` and is skipped — `alpine.json` forces
+`replace`.
+
+Previously: Implemented. Phase 1 merged as owine/renovate-config#79; all five
 consumers migrated; Phase 3 (throttle removal) completed 2026-08-19. Fleet
 verified: 6/12/1/2/19 apk deps resolving via custom.alpine, UNTRACKED: none.
 
