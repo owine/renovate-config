@@ -42,7 +42,7 @@
   },
   "packageRules": [
     {
-      "description": "Reclaim `deps:` as the baseline commit type. The top-level `semanticCommitType: deps` above is INERT on its own: Renovate ships two built-in default packageRules — `{matchPackageNames:['*'] => chore}` and `{matchDepTypes:['dependencies','require'] => fix}` — and packageRules ALWAYS beat top-level config, so without this override every bump commits as `chore:` (npm prod deps as `fix:`). That matters because release-please treats `chore:` as a HIDDEN, non-releasing type: Dockerfile/Actions/apk repos would cut zero releases and add nothing to the changelog. This catch-all re-forces `deps:` for every package (release-please recognizes `deps` as a releasable unit => patch, in a dedicated Dependencies changelog section). Ordered FIRST so the more specific rules below/after still win where they match: major => feat (next rule), security => fix (vulnerabilityAlerts, force), and hand-picked consumer deps => feat (e.g. mcp.json's SDK rule).",
+      "description": "Reclaim `deps:` as the baseline commit type. The top-level `semanticCommitType: deps` above is INERT on its own: Renovate ships two built-in default packageRules — `{matchPackageNames:['*'] => chore}` and `{matchDepTypes:['dependencies','require'] => fix}` — and packageRules ALWAYS beat top-level config, so without this override every bump commits as `chore:` (npm prod deps as `fix:`). That matters because release-please treats `chore:` as a HIDDEN, non-releasing type: Dockerfile/Actions/apk repos would cut zero releases and add nothing to the changelog. This catch-all re-forces `deps:` for every package (release-please recognizes `deps` as a releasable unit => patch, in a dedicated Dependencies changelog section). Ordered FIRST so the more specific rules below/after still win where they match: lock file maintenance => chore, CI/Actions => ci, security => fix (vulnerabilityAlerts, force). Nothing in this fleet types a dependency update `feat:` — majors included; see the major rule below.",
       "matchPackageNames": ["*"],
       "semanticCommitType": "deps"
     },
@@ -52,12 +52,21 @@
       "semanticCommitType": "chore"
     },
     {
-      "description": "Major bumps — separate PR per package, 7-day soak, manual review required. Typed `feat:` (not the baseline `deps:`) so release-please cuts a MINOR release in consumers: a dependency crossing a major line is notable enough to surface in the changelog's Features section, above routine `deps:` patch churn. Safe to type per-rule because default.json's separateMajorMinor/separateMultipleMajor isolate every major onto its own branch — one major per PR, no mixed-type commit. NOT typed `feat!:`/breaking: an upstream major is not automatically the consumer's breaking change.",
+      "description": "Major bumps — separate PR per package, 7-day soak, manual review required. Deliberately sets NO semanticCommitType: it falls through to the `* => deps` catch-all above and cuts a PATCH release, in the changelog's Dependencies section alongside routine churn. This rule used to type majors `feat:` (minor release, Features section); that is gone, because `feat:` should mean a feature someone here wrote, not an upstream version number crossing a line — inflating consumers' minor versions on dependency churn made the minor digit meaningless. Nothing Renovate generates is `feat:` any more. What still marks a major as special is the review surface, not the commit type: its own branch (separateMajorMinor/separateMultipleMajor), a 7-day soak, automerge off, and the `major-update`/`needs-review` labels. Also still not `feat!:`/breaking: an upstream major is not automatically the consumer's breaking change.",
       "matchUpdateTypes": ["major"],
       "minimumReleaseAge": "7 days",
       "automerge": false,
-      "semanticCommitType": "feat",
       "addLabels": ["major-update", "needs-review"]
+    },
+    {
+      "description": "CI plumbing commits as `ci:` — release-please's HIDDEN, non-releasing type. Actions, reusable workflows and composite `action.yml` files are build-time infrastructure: nothing a consumer of the published image/package/server can observe, so bumping actions/checkout should neither cut a patch release nor add a changelog line. Ordered AFTER the `* => deps` catch-all and the major rule so it wins for every update type, major included — a GHA major still gets that rule's 7-day soak, `automerge: false` and `major-update`/`needs-review` labels, it just doesn't release. Security is exempt automatically: `vulnerabilityAlerts.semanticCommitType: fix` is applied at force level and beats every packageRule, so a CVE in an action still lands in Bug Fixes and cuts a release. Covers `.github/workflows`, `.github/actions`, `workflow-templates/` and any `action.yml` — the github-actions manager's own file patterns.",
+      "matchManagers": ["github-actions"],
+      "semanticCommitType": "ci"
+    },
+    {
+      "description": "Same `ci:` treatment for the workflow version literals the customManagers block below extracts — tool versions in matrix arrays, run-step args and env defaults inside `.github/workflows/*.yml`. Those deps belong to the custom regex manager, not `github-actions`, so the matchManagers rule above can't reach them; they are matched by path instead. Deliberately NOT `matchManagers: ['custom.regex']`, which would also silence any unrelated custom manager a consumer repo defines.",
+      "matchFileNames": [".github/workflows/**"],
+      "semanticCommitType": "ci"
     },
     {
       "description": "Pin Docker image and GitHub Action digests so a re-tagged image/action can't slip in",

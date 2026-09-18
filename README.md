@@ -32,25 +32,29 @@ Only extend the ecosystem presets a repo actually uses. Extend `:mcp` *after* `:
 | `node.json` | Node/TS ecosystem groupings (most are peer-dep/lockstep coupled; a few are explicitly churn reduction — each rule says which): React, TanStack, Radix (the unified `radix-ui` package **and** the legacy `@radix-ui/*` primitives, for migration coherence), Vite, Tailwind (`tailwindcss` + `@tailwindcss/*` only — **not** the third-party `tailwind-merge`/`tw-animate-css`), Vitest (the whole `@vitest/*` scope, incl. `@vitest/ui`) + testcontainers, Testing Library (the `@testing-library/react` + `@testing-library/dom` peer pair only), ESLint plugins, ESLint core (`eslint` + `@eslint/js`, deliberately a **separate** group from the plugins), Prisma, Auth.js, pg, Hono, Preact, Cloudflare Workers (wrangler/@cloudflare/miniflare), toolchain (node+pnpm). Plus Next.js (incl. `eslint-config-next`, which must stay ordered after `eslint plugins`), Playwright (**npm-scoped via `matchDatasources`** so it never reaches the PyPI package of the same name), react-hook-form, stylelint, tesseract.js, Sentry. A trailing **pre-seeded** block covers ecosystems no repo uses yet (storybook, OpenTelemetry, AWS SDK, tRPC, drizzle, NestJS, Babel, SWC, jest, astro, nuxt, SvelteKit, expo, apollo, clerk, supabase) so the first adopter is grouped on day one. The AWS/OTel group names are ecosystem-suffixed (`aws-sdk-js`, `opentelemetry-js`) because a groupName is a branch name — sharing one with `python.json` would merge both ecosystems into a single cross-manager PR. |
 | `python.json` | pep621 ecosystem groupings (mostly peer-dep/hard-pinned; `scientific-python` is churn reduction): FastAPI stack, Pydantic, SQLAlchemy stack, pytest, lint/types tooling, boto3+botocore (hard pin), PyTorch trio, LangChain, OpenTelemetry, Celery (`vine` is also an npm name — the `matchManagers` scope is load-bearing), plus pre-seeded Django, Hugging Face, and numpy/scipy/pandas. Plus a `python runtime` group binding an exact-pinned `requires-python` (via customManager) to the `python` Docker base image — **needs a manual `uv lock` commit**, see Consumer notes. |
 | `docker.json` | Dockerfile base bundling, GH Actions setup/artifact/docker families, runtime-major flags. The `dockerfile bases` group **excludes the language-runtime images** (`node`/`pnpm`/`python`, both bare and `docker.io/library/…` spellings) so they stay with their own runtime groups — see Consumer notes. |
-| `mcp.json` | MCP server repos: isolate `@modelcontextprotocol/sdk` for manual review (`feat:` prefix), keep `engines.node` unpinned for library consumers. Extend after `node.json`. |
+| `mcp.json` | MCP server repos: isolate `@modelcontextprotocol/sdk` for manual review (no automerge), keep `engines.node` unpinned for library consumers. Extend after `node.json`. |
 | `alpine.json` | Alpine updates. apk pins (**built-in `apk` datasource**, extracted from `RUN apk add` by the dockerfile manager since Renovate 44.96.0): one `alpine packages` group, 0-day soak, runs any time, **automerges every non-major bump (patch/pin/digest/minor) together**, and forces `rangeStrategy: replace` (without it every drifted pin goes silently dark). Gates **`node:*-alpine` image bumps** (minor/patch) to manual review. Also gates **alpine base-image (`docker`) minor bumps** to manual review (the base-image patch line automerges). Carved out of `automerge.json`'s bundle **and** of `docker.json`'s `dockerfile bases` group — extend after both. **Requires a consumer-side `registryUrls`** naming the Alpine release line (see Consumer notes). |
 | `home-assistant.json` | Home Assistant add-on repos. Pins the HA base image (`ghcr.io/home-assistant/base`) to a versioned tag + digest and gates its **minor bumps** to manual review (the tag *is* the Alpine line, so a bump means hand-editing the `branch=vX.Y` in the consumer's apk `registryUrls`); digest rebuilds automerge. Adds CalVer versioning for the `home-assistant/builder` action. Extend after `:automerge`/`:docker` (and `:alpine` if used). |
 
 ## Commit types & release-please
 
-These presets are tuned for consumer repos running [release-please](https://github.com/googleapis/release-please), which parses the Conventional Commit **type** to decide releases: `feat` → minor, `fix`/`deps` → patch, `chore` → **hidden, no release**.
+These presets are tuned for consumer repos running [release-please](https://github.com/googleapis/release-please), which parses the Conventional Commit **type** to decide releases: `feat` → minor, `fix`/`deps` → patch, `chore`/`ci` → **hidden, no release**.
+
+**No dependency update is ever typed `feat:`.** A `feat:` commit — and therefore a minor version bump — means a feature someone here wrote. An upstream version number crossing a major line is not that, so majors ride the `deps:` patch baseline like everything else; what marks them out is their own PR, the 7-day soak, `automerge: false` and the `major-update`/`needs-review` labels.
 
 Renovate ships built-in default `packageRules` that type every bump `chore:` (npm production deps `fix:`), and `packageRules` always beat top-level config — so a bare `semanticCommitType` is inert and Dockerfile/Actions/apk repos would get **no release-please releases at all**. `default.json` reclaims the types via `packageRules`:
 
 | Update | Commit type | release-please effect |
 |--------|-------------|-----------------------|
 | patch / minor / pin / digest | `deps:` | patch → *Dependencies* section |
-| major | `feat:` | minor → *Features* section |
+| major | `deps:` | patch → *Dependencies* section (plus `major-update`/`needs-review` labels) |
+| GitHub Actions / workflow tooling | `ci:` | **no release** (hidden) |
 | security (`vulnerabilityAlerts`) | `fix:` | patch → *Bug Fixes* section |
 | lock file maintenance | `chore:` | **no release** (hidden) |
-| hand-picked consumer dep (e.g. `mcp.json`'s `@modelcontextprotocol/sdk`) | `feat:` | minor → *Features* section |
 
-Rule precedence (last match wins) is: catch-all `*` → `deps` → lock file maintenance → `chore` → `major` → `feat` → security `fix` (forced) → any per-repo `feat` opt-in. A repo where a specific dependency's *minor* bumps are consumer-facing can add its own `{ "matchPackageNames": [...], "semanticCommitType": "feat" }` rule — see `mcp.json`.
+Rule precedence (last match wins) is: catch-all `*` → `deps` → lock file maintenance → `chore` → major (no type of its own; inherits `deps`) → github-actions + `.github/workflows/**` → `ci` → security `fix` (forced, so a CVE in an action still releases as a Bug Fix).
+
+CI plumbing is hidden because it isn't observable to anyone consuming the published image, package or server — an `actions/checkout` bump shouldn't move a version number. That covers both the `github-actions` manager (`.github/workflows`, `.github/actions`, `workflow-templates/`, any `action.yml`) and the workflow version literals the custom regex manager extracts; the latter is matched by *path*, not by `matchManagers: ["custom.regex"]`, so a consumer repo's own custom managers aren't silenced along with it.
 
 ## Supply-chain posture
 
@@ -242,7 +246,7 @@ Rule precedence (last match wins) is: catch-all `*` → `deps` → lock file mai
   same drift hazard as a patch, and both deps bump to the same version. This
   doesn't weaken the major policy: `separateMajorMinor`/`separateMultipleMajor`
   still isolate the major onto its own branch, and `default.json`'s major rule
-  still applies the 7-day soak, `automerge: false`, `feat:`, and
+  still applies the 7-day soak, `automerge: false`, and
   `major-update`/`needs-review`. Grouping decides who shares the branch, not how
   it's reviewed.
 
