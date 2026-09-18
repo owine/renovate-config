@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   renovate-config-validator:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     # Validate against the same engine Mend-hosted runs (the Docker image tracks
     # real releases; the npm package lags ~35 minors behind). Renovate's native
