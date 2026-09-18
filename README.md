@@ -154,10 +154,18 @@ Rule precedence (last match wins) is: catch-all `*` → `deps` → lock file mai
   ```
 
   Renovate also skips, with a logged reason, pins it cannot act on: an
-  unversioned `apk add bash` (`unspecified-version`), a version from a variable
-  (`contains-variable`), and a range constraint such as `curl=~8.12.1`
-  (`unsupported-version` — fuzzy constraints are
-  [#45693](https://github.com/renovatebot/renovate/pull/45693), still open).
+  unversioned `apk add bash` (`unspecified-version`) and a version from a
+  variable (`contains-variable`). A fuzzy constraint such as `curl=~8.12.1` is
+  extracted since
+  [#45693](https://github.com/renovatebot/renovate/pull/45693) (merged
+  2026-09-18) — the constraint itself becomes the `currentValue` and is
+  rewritten only when the version moves outside it (`~8.12.1` → `~8.13.0`).
+  Every pin in this fleet is an **exact** `=` pin and should stay that way: the
+  `alpine packages` group's automerge rests on a drifted pin failing the Docker
+  build loudly, which a `~` constraint would mask by accepting any `-rN`. That
+  PR does not change exact-pin handling — `isSingleVersion` is still true for
+  them, so `currentValue` and the replace template are unchanged.
+
   Virtual packages (`--virtual .build-deps`), local `.apk` files and provider
   deps (`so:`, `cmd:`) are ignored outright.
 
