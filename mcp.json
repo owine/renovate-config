@@ -3,10 +3,9 @@
   "description": "MCP server repos. Isolate the MCP SDK for manual review and keep engines.node unpinned so library consumers keep a broad range. Extend AFTER node.json.",
   "packageRules": [
     {
-      "description": "MCP SDK — review every bump manually. Carved out of the non-major automerge bundle and typed `feat:` so a minor SDK bump triggers a MINOR release-please bump in consumers. This is the fleet's 'hand-picked consumer-facing dependency' opt-in: default.json types routine bumps `deps:` (patch) and majors `feat:` (minor), but a minor SDK bump expands capability this server re-exposes, so it warrants `feat:` on its own. Add a rule like this in any repo where a specific dependency's minor bumps are consumer-facing.",
+      "description": "MCP SDK — review every bump manually. Carved out of the non-major automerge bundle so a human reads the SDK changelog before it lands: this server re-exposes SDK capability, and a minor bump can change what clients see. The review gate is the whole point; the commit type is the fleet baseline `deps:` (patch, Dependencies section). It was `feat:` (minor release) until the fleet stopped generating `feat:` for dependency updates entirely — see default.json's major rule. If a consumer-facing SDK bump warrants a minor release, say so in a hand-written commit rather than teaching Renovate to claim features it didn't write.",
       "matchPackageNames": ["@modelcontextprotocol/sdk"],
       "groupName": "mcp-sdk",
-      "semanticCommitType": "feat",
       "automerge": false,
       "addLabels": ["needs-review"]
     },
