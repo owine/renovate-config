@@ -27,7 +27,7 @@ Only extend the ecosystem presets a repo actually uses. Extend `:mcp` *after* `:
 
 | File | Purpose |
 |------|---------|
-| `default.json` | Baseline. Pinned ranges, 3-day soak, OSV alerts, GH Action digests, lockfile maintenance, pre-commit hook updates, weekly schedule (Mondays, `America/Chicago`). Majors separated into their own PRs and held for manual review. `rebaseWhen: auto` — Renovate rebases stale PRs only when safe (no manual edits, no conflicts); use the PR checkbox to force a rebase otherwise. |
+| `default.json` | Baseline. Pinned ranges, 3-day soak, OSV alerts, GH Action digests, lockfile maintenance, pre-commit hook updates, weekly schedule (Mondays, `America/Chicago`). Majors separated into their own PRs and held for manual review. `rebaseWhen: auto` — Renovate rebases stale PRs only when safe (no manual edits, no conflicts); use the PR checkbox to force a rebase otherwise. Two `customManagers` for `.github/workflows/*.yml`: `# renovate: datasource=X depName=Y` annotations, and **non-literal runner labels** (`matrix.include[].runner`, `workflow_call` input defaults, JSON-in-`run:`) — see Consumer notes. |
 | `automerge.json` | Group all non-major updates into one PR, automerge once CI passes. Skip if you want hand-review of every patch. |
 | `node.json` | Node/TS ecosystem groupings (most are peer-dep/lockstep coupled; a few are explicitly churn reduction — each rule says which): React, TanStack, Radix (the unified `radix-ui` package **and** the legacy `@radix-ui/*` primitives, for migration coherence), Vite, Tailwind (`tailwindcss` + `@tailwindcss/*` only — **not** the third-party `tailwind-merge`/`tw-animate-css`), Vitest (the whole `@vitest/*` scope, incl. `@vitest/ui`) + testcontainers, Testing Library (the `@testing-library/react` + `@testing-library/dom` peer pair only), ESLint plugins, ESLint core (`eslint` + `@eslint/js`, deliberately a **separate** group from the plugins), Prisma, Auth.js, pg, Hono, Preact, Cloudflare Workers (wrangler/@cloudflare/miniflare), toolchain (node+pnpm). Plus Next.js (incl. `eslint-config-next`, which must stay ordered after `eslint plugins`), Playwright (**npm-scoped via `matchDatasources`** so it never reaches the PyPI package of the same name), react-hook-form, stylelint, tesseract.js, Sentry. A trailing **pre-seeded** block covers ecosystems no repo uses yet (storybook, OpenTelemetry, AWS SDK, tRPC, drizzle, NestJS, Babel, SWC, jest, astro, nuxt, SvelteKit, expo, apollo, clerk, supabase) so the first adopter is grouped on day one. The AWS/OTel group names are ecosystem-suffixed (`aws-sdk-js`, `opentelemetry-js`) because a groupName is a branch name — sharing one with `python.json` would merge both ecosystems into a single cross-manager PR. |
 | `python.json` | pep621 ecosystem groupings (mostly peer-dep/hard-pinned; `scientific-python` is churn reduction): FastAPI stack, Pydantic, SQLAlchemy stack, pytest, lint/types tooling, boto3+botocore (hard pin), PyTorch trio, LangChain, OpenTelemetry, Celery (`vine` is also an npm name — the `matchManagers` scope is load-bearing), plus pre-seeded Django, Hugging Face, and numpy/scipy/pandas. Plus a `python runtime` group binding an exact-pinned `requires-python` (via customManager) to the `python` Docker base image — **needs a manual `uv lock` commit**, see Consumer notes. |
@@ -70,6 +70,48 @@ CI plumbing is hidden because it isn't observable to anyone consuming the publis
 - **`osvVulnerabilityAlerts`** + **`security:openssf-scorecard`** — extra vuln signal beyond GitHub's native alerts.
 
 ## Consumer notes & caveats
+
+- **Runner labels reached indirectly are now tracked.** The built-in
+  `github-actions` manager extracts runner images from literal `runs-on:`
+  values only — the Renovate docs say so outright for env-var indirection. Any
+  label reached another way was invisible, so merging Renovate's PR shipped a
+  **split-brain build** (test jobs on the new image, container builds on the
+  old) that stayed **green**, because both images work and nothing flags the
+  mismatch. `default.json` adds a `github-runners` customManager covering the
+  three shapes that exist in this fleet:
+
+  ```yaml
+  # a. matrix.include[] — doc-scanner, youth-activity-scheduler, nut-cgi,
+  #    MLB-Deferred-Contract-Calculator, house-manager
+  include:
+    - { platform: linux/arm64, runner: ubuntu-26.04-arm }
+
+  # b. workflow_call input default — compose-workflow (feeds runs-on: ${{ inputs.runner }})
+  inputs:
+    runner:
+      type: string
+      default: 'ubuntu-24.04'
+
+  # c. JSON string inside a run: step — trip-tracker's dynamic matrix
+  - run: echo 'matrix=[{"runner":"ubuntu-26.04"}]' >> "$GITHUB_OUTPUT"
+  ```
+
+  **The capture mirrors the built-in manager's own regex**
+  (`^\s*(?<depName>[a-zA-Z]+)-(?<currentValue>[^\s]+)`): `currentValue` takes
+  the whole remainder, **suffix included**. The `github-runners` datasource
+  carries `26.04-arm`, `15-large` and `15-intel` as *distinct versions* —
+  `24.04-arm` is not `24.04` with decoration. Capturing a bare `\d+\.\d+`
+  and letting the suffix sit outside the match looks tidier and is wrong: it
+  files the arm runner under the x64 runner's version. Matching byte-for-byte
+  also makes these deps share a `branchName` with the literal `runs-on:` ones,
+  so both edits land in **one** PR — which is the whole point. Verified by dry
+  run: `ubuntu-22.04` (runs-on) and `ubuntu-22.04` (matrix) both resolve to
+  `renovate/ubuntu-24.x`, and `22.04-arm` → `24.04-arm`.
+
+  There is no `autoReplaceStringTemplate` on purpose — the default value-only
+  replacement rewrites exactly the `currentValue` span. Nothing is required of
+  the consumer; these deps commit as `ci:` via the existing
+  `matchFileNames: ['.github/workflows/**']` rule.
 
 - **`alpine.json` is packageRules-only, and apk extraction is now built in.**
   Since Renovate **44.96.0** the `dockerfile` manager extracts

@@ -64,7 +64,7 @@
       "semanticCommitType": "ci"
     },
     {
-      "description": "Same `ci:` treatment for the workflow version literals the customManagers block below extracts — tool versions in matrix arrays, run-step args and env defaults inside `.github/workflows/*.yml`. Those deps belong to the custom regex manager, not `github-actions`, so the matchManagers rule above can't reach them; they are matched by path instead. Deliberately NOT `matchManagers: ['custom.regex']`, which would also silence any unrelated custom manager a consumer repo defines.",
+      "description": "Same `ci:` treatment for the workflow version literals the customManagers block below extracts — annotated tool versions in matrix arrays, run-step args and env defaults, AND the non-literal runner labels (`matrix.include[].runner`, `workflow_call` input defaults, JSON-in-`run:`) picked up by the second manager — all inside `.github/workflows/*.yml`. Those deps belong to the custom regex manager, not `github-actions`, so the matchManagers rule above can't reach them; they are matched by path instead. This is what keeps a runner-label bump typed `ci:` and consistent with the literal `runs-on:` half of the very same PR. Deliberately NOT `matchManagers: ['custom.regex']`, which would also silence any unrelated custom manager a consumer repo defines.",
       "matchFileNames": [".github/workflows/**"],
       "semanticCommitType": "ci"
     },
@@ -94,6 +94,17 @@
         "['\"]?(?<currentValue>\\d+\\.\\d+\\.\\d+)['\"]?[ \\t]*#[ \\t]*renovate:[ \\t]*datasource=(?<datasource>\\S+)[ \\t]+depName=(?<depName>\\S+)(?:[ \\t]+packageName=(?<packageName>\\S+))?(?:[ \\t]+versioning=(?<versioning>\\S+))?",
         "#[ \\t]*renovate:[ \\t]*datasource=(?<datasource>\\S+)[ \\t]+depName=(?<depName>\\S+)(?:[ \\t]+packageName=(?<packageName>\\S+))?(?:[ \\t]+versioning=(?<versioning>\\S+))?[ \\t]*\\n[^\\n]*?['\"]?(?<currentValue>\\d+\\.\\d+\\.\\d+)['\"]?"
       ]
+    },
+    {
+      "description": "Make runner labels visible where they are NOT a literal `runs-on:` value. Renovate's github-actions manager extracts runners from literal `runs-on:` ONLY (its docs say so outright for env vars), so a label reached indirectly is invisible — and merging Renovate's partial PR then ships a SPLIT-BRAIN build (some jobs on the new image, some on the old) that stays GREEN, because both images work. Three shapes are covered, all observed in owine/*: (a) `matrix.include[]` entries `runner: ubuntu-26.04` — doc-scanner, youth-activity-scheduler, nut-cgi, MLB-Deferred-Contract-Calculator, house-manager; (b) a reusable-workflow `workflow_call` input named `runner` whose `default:` carries the label — compose-workflow, which today has 3 such defaults alongside 4 literal `runs-on:` and is one Renovate PR away from split-brain; (c) the same key inside a JSON string in a `run:` step, `\"runner\":\"ubuntu-26.04\"` — trip-tracker's dynamically-built matrix. INVARIANT — the capture must mirror the built-in manager's own regex `^\\s*(?<depName>[a-zA-Z]+)-(?<currentValue>[^\\s]+)`: `currentValue` takes the WHOLE remainder, suffix included, because the github-runners datasource carries `26.04-arm`, `15-large` and `15-intel` as distinct versions — `24.04-arm` is NOT `24.04` with decoration. Capturing a bare `\\d+\\.\\d+` would file the arm runner under the x64 runner's version and could propose a label that does not exist for arm. Matching the built-in extraction byte-for-byte also makes these deps collapse into the SAME branch as the literal `runs-on:` ones, which is what turns two half-PRs into one whole one. No `autoReplaceStringTemplate` on purpose: the default value-only replacement rewrites exactly the `currentValue` span. No `versioningTemplate` either — the github-runners datasource defaults to `docker` versioning, same as the built-in manager. INVARIANT — inter-field separators use `[ \\t]`, never `\\s`, so a match cannot leak across lines (see PR #4); `\\s` appears only inside negated classes as a value terminator, which is the opposite concern. The multi-line pattern (b) is bounded to <=6 intervening lines that each carry a `key: value` pair, so it stops at the next bare block-opening key and cannot latch onto a sibling input's `default:`; it also cannot match the `description:` line that quotes a sample label, because `default:` is required immediately before the value. These deps belong to `custom.regex`, not `github-actions`, so they are typed `ci:` by the `matchFileNames: ['.github/workflows/**']` rule above, not by the `matchManagers` one.",
+      "customType": "regex",
+      "managerFilePatterns": ["/^\\.github/workflows/[^/]+\\.ya?ml$/"],
+      "matchStringsStrategy": "any",
+      "matchStrings": [
+        "[\"']?runner[\"']?:[ \\t]*[\"']?(?<depName>ubuntu|windows|macos)-(?<currentValue>[0-9][^\\s\"',\\]}]*)",
+        "runner:[ \\t]*\\n(?:[ \\t]+[a-z-]+:[ \\t]*\\S[^\\n]*\\n){0,6}?[ \\t]+default:[ \\t]*[\"']?(?<depName>ubuntu|windows|macos)-(?<currentValue>[0-9][^\\s\"',\\]}]*)"
+      ],
+      "datasourceTemplate": "github-runners"
     }
   ]
 }
