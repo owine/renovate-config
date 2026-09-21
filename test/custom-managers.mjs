@@ -16,13 +16,15 @@
 //
 // Locally:  npm i renovate && RENOVATE_DIST=./node_modules/renovate/dist node test/custom-managers.mjs
 
-import { readFileSync, writeFileSync, mkdtempSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdtempSync, mkdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const DIST = process.env.RENOVATE_DIST ?? '/usr/local/renovate/dist';
-const HERE = dirname(new URL(import.meta.url).pathname);
+// fileURLToPath, not URL.pathname: the latter stays percent-encoded, so a
+// checkout path containing a space would not resolve the fixtures.
+const HERE = dirname(fileURLToPath(import.meta.url));
 
 const load = async (rel) => {
   const path = join(DIST, rel);
@@ -48,8 +50,12 @@ const { matchRegexOrGlobList } = await load('util/string-match.js');
 const { init } = await load('logger/index.js');
 await init(); // otherwise every Renovate log line is swallowed with a warning
 
+// doAutoReplace writes through writeLocalFile, so it needs a real localDir.
 const workspace = mkdtempSync(join(tmpdir(), 'renovate-fixtures-'));
 GlobalConfig.set({ localDir: workspace });
+// on('exit') rather than a finally: the early-exit paths above and below would
+// otherwise leave a copy of every rewritten fixture behind on each run.
+process.on('exit', () => rmSync(workspace, { recursive: true, force: true }));
 
 // ---------------------------------------------------------------------------
 // Manager selection
@@ -227,15 +233,19 @@ for (const c of cases) {
     continue;
   }
 
+  // Walk the LONGER of the two: mapping over `after` alone would make a
+  // truncating rewrite invisible — drop every line after the target and
+  // `changed.length === 1` still holds, which is the one thing this asserts.
   const before = content.split('\n');
-  const changed = after
-    .split('\n')
-    .map((line, i) => [before[i], line])
-    .filter(([b, a]) => b !== a);
+  const afterLines = after.split('\n');
+  const changed = Array.from({ length: Math.max(before.length, afterLines.length) }, (_, i) => [
+    before[i],
+    afterLines[i],
+  ]).filter(([b, a]) => b !== a);
 
   if (changed.length !== 1) {
     fail(name, `auto-replace changed ${changed.length} line(s), expected exactly 1\n` +
-      changed.map(([b, a]) => `- ${b}\n+ ${a}`).join('\n'));
+      changed.map(([b, a]) => `- ${b ?? '(end of file)'}\n+ ${a ?? '(line removed)'}`).join('\n'));
   } else if (!changed[0][0].includes(c.replace.from) || !changed[0][1].includes(c.replace.to)) {
     fail(name, `auto-replace rewrote the wrong line\n` +
       `expected: ${c.replace.from} -> ${c.replace.to}\n` +
