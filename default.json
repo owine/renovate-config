@@ -79,6 +79,12 @@
       "pinDigests": true
     },
     {
+      "description": "NEVER pin a digest onto a `uses-with` dep — it is physically impossible and hard-errors the branch. The github-actions manager extracts THREE deps from one annotated action step: the `uses:` line (depType `action`, digest belongs there), the action's `version:` INPUT for actions it knows how to read (depType `uses-with`, datasource github-releases), and — where the repo also carries a `# renovate:` comment — a third dep from this file's customManagers. The rule above matches `matchManagers: [github-actions]`, i.e. the WHOLE manager, so it switched pinDigests on for the `uses-with` dep too. A `with: version: '0.16.7'` input has nowhere to put a 40-char SHA: auto-replace rewrites the value, then asserts the result contains newDigest, fails that assert, and returns a branch-level `Error updating branch: update failure` with the upgrade listed under Errored on the Dependency Dashboard. Observed on owine/claude-terminal-home-assistant `.github/workflows/lint.yml` (astral-sh/ruff-action + `version: '0.16.7'`), run 2026-09-21: branch `renovate/pins`, `ci: pin dependency ruff to b5dba86`, result `error`. PRE-DATES the off-schedule `pins` split and was not caused by it — pinDigests generates this upgrade regardless of which branch it lands on. The split only made it VISIBLE: the impossible upgrade used to be one of 14 on the weekly bundle, and is now alone on a branch that therefore cannot do anything but fail, every run, because pins are unscheduled. Upstream gets this right — `helpers:pinGitHubActionDigests`, which this preset already extends, scopes itself to `matchDepTypes: [action]` rather than to the manager. DELIBERATELY a negation rather than narrowing the rule above to `matchManagers: [dockerfile]`: workflow `container:`/`services:` images (depTypes `container`/`service`) are real Docker refs that SHOULD stay digest-pinned, and dropping github-actions from that rule would silently unpin them.",
+      "matchManagers": ["github-actions"],
+      "matchDepTypes": ["uses-with"],
+      "pinDigests": false
+    },
+    {
       "description": "docker-compose: bump tags but never pin digests — keeps compose files readable for humans editing them by hand",
       "matchManagers": ["docker-compose"],
       "pinDigests": false
