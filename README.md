@@ -28,7 +28,7 @@ Only extend the ecosystem presets a repo actually uses. Extend `:mcp` *after* `:
 | File | Purpose |
 |------|---------|
 | `default.json` | Baseline. Pinned ranges, 3-day soak, OSV alerts, GH Action digests, lockfile maintenance, pre-commit hook updates, weekly schedule (Mondays, `America/Chicago`). Majors separated into their own PRs and held for manual review. `rebaseWhen: auto` — Renovate rebases stale PRs only when safe (no manual edits, no conflicts); use the PR checkbox to force a rebase otherwise. Two `customManagers` for `.github/workflows/*.yml`: `# renovate: datasource=X depName=Y` annotations, and **non-literal runner labels** (`matrix.include[].runner`, `workflow_call` input defaults, JSON-in-`run:`) — see Consumer notes. |
-| `automerge.json` | Group all non-major updates into one PR, automerge once CI passes. Skip if you want hand-review of every patch. |
+| `automerge.json` | Group all non-major updates into one weekly PR, automerge once CI passes. `pin`/`pinDigest` are split onto a separate `pins` PR so they can run at any time — a `groupName` is a branch name and a branch gets one schedule, so bundling them would have pinned them to Monday. Skip if you want hand-review of every patch. |
 | `node.json` | Node/TS ecosystem groupings (most are peer-dep/lockstep coupled; a few are explicitly churn reduction — each rule says which): React, TanStack, Radix (the unified `radix-ui` package **and** the legacy `@radix-ui/*` primitives, for migration coherence), Vite, Tailwind (`tailwindcss` + `@tailwindcss/*` only — **not** the third-party `tailwind-merge`/`tw-animate-css`), Vitest (the whole `@vitest/*` scope, incl. `@vitest/ui`) + testcontainers, Testing Library (the `@testing-library/react` + `@testing-library/dom` peer pair only), ESLint plugins, ESLint core (`eslint` + `@eslint/js`, deliberately a **separate** group from the plugins), Prisma, Auth.js, pg, Hono, Preact, Cloudflare Workers (wrangler/@cloudflare/miniflare), toolchain (node+pnpm). Plus Next.js (incl. `eslint-config-next`, which must stay ordered after `eslint plugins`), Playwright (**npm-scoped via `matchDatasources`** so it never reaches the PyPI package of the same name), react-hook-form, stylelint, tesseract.js, Sentry. A trailing **pre-seeded** block covers ecosystems no repo uses yet (storybook, OpenTelemetry, AWS SDK, tRPC, drizzle, NestJS, Babel, SWC, jest, astro, nuxt, SvelteKit, expo, apollo, clerk, supabase) so the first adopter is grouped on day one. The AWS/OTel group names are ecosystem-suffixed (`aws-sdk-js`, `opentelemetry-js`) because a groupName is a branch name — sharing one with `python.json` would merge both ecosystems into a single cross-manager PR. |
 | `python.json` | pep621 ecosystem groupings (mostly peer-dep/hard-pinned; `scientific-python` is churn reduction): FastAPI stack, Pydantic, SQLAlchemy stack, pytest, lint/types tooling, boto3+botocore (hard pin), PyTorch trio, LangChain, OpenTelemetry, Celery (`vine` is also an npm name — the `matchManagers` scope is load-bearing), plus pre-seeded Django, Hugging Face, and numpy/scipy/pandas. Plus a `python runtime` group binding an exact-pinned `requires-python` (via customManager) to the `python` Docker base image — **needs a manual `uv lock` commit**, see Consumer notes. |
 | `docker.json` | Dockerfile base bundling, GH Actions setup/artifact/docker families, runtime-major flags. The `dockerfile bases` group **excludes the language-runtime images** (`node`/`pnpm`/`python`, both bare and `docker.io/library/…` spellings) so they stay with their own runtime groups — see Consumer notes. |
@@ -65,11 +65,24 @@ CI plumbing is hidden because it isn't observable to anyone consuming the publis
   - Combined with the soak, that permanently freezes Docker updates from registries that don't expose timestamps: GHCR, Quay, `mcr.microsoft.com`, most private/Artifactory registries.
   - Docker Hub (and npm/PyPI/crates.io/etc.) still get the real soak — they provide timestamps. Timestamp-less registries skip it (they can't be soaked either way, so the choice is *flow* vs *deadlock*).
 - **`vulnerabilityAlerts`** override — CVE fixes skip the soak and automerge.
+- **Pins run off-schedule** — `pin` and `pinDigest` carry `schedule: ["at any time"]`, so a new dependency is pinned as soon as Renovate sees it instead of floating until Monday. Neither type changes a resolved version: `pin` rewrites a range to the version already resolving under it, `pinDigest` appends the digest the tag already points at. `digest` is **not** included — a digest *refresh* re-points an unchanged tag at different bytes, so it stays in the reviewed weekly bundle. With `automerge.json` these land on their own `pins` branch (see below).
 - **`helpers:pinGitHubActionDigests`** — every `uses:` resolves to a 40-char commit SHA.
 - **`pinDigests: true`** for Dockerfiles — base images pinned by `@sha256:` digest.
 - **`osvVulnerabilityAlerts`** + **`security:openssf-scorecard`** — extra vuln signal beyond GitHub's native alerts.
 
 ## Consumer notes & caveats
+
+- **Pins can still slip to Monday inside an ecosystem group.** The groups in
+  `node.json`/`python.json` and `docker.json`'s `github-actions-*` rules set no
+  `matchUpdateTypes`, so they match `pin`/`pinDigest` too and, being extended later,
+  win the group name over `automerge.json`'s `pins`. A pin swept into one of those
+  branches still runs at any time when it is that branch's **only** pending upgrade;
+  it waits for Monday only when a version bump in the same group is pending in the
+  same run. Accepted rather than fixed: excluding pins from ~55 grouping rules would
+  push a scheduling concern into every ecosystem rule in the fleet and rot on the next
+  group added. `dockerfile bases` is the one exception — it named `pinDigest`
+  explicitly, and `pinDigest` is the conversion that recurs, since every new `FROM`
+  line produces one.
 
 - **Runner labels reached indirectly are now tracked.** The built-in
   `github-actions` manager extracts runner images from literal `runs-on:`
@@ -278,7 +291,11 @@ CI plumbing is hidden because it isn't observable to anyone consuming the publis
   Digest pinning is unaffected either way: `pinDigests` comes from
   `default.json`'s `matchManagers: ["dockerfile", "github-actions"]` rule, and
   the runtime images' `digest`/`pinDigest` updates just group under their runtime
-  name. In a repo that extends `:docker` but **not** the matching ecosystem
+  name. The `dockerfile bases` group no longer lists `pinDigest` at all: it is
+  extended after `automerge.json`, so naming it there won the group and parked every
+  tag-to-digest conversion back on the weekly branch. A base image's **first** digest
+  pin now rides `pins` and lands immediately; every later digest **refresh** still rides
+  `dockerfile bases`. In a repo that extends `:docker` but **not** the matching ecosystem
   preset, a runtime base-image bump becomes its own PR (or joins
   `automerge.json`'s non-major bundle) — self-consistent, since there is no
   manifest on the other side to disagree with it.
