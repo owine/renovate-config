@@ -3,9 +3,16 @@
   "description": "Grouped automerge for all non-major updates. Extend AFTER default.json. Skip in repos that need stricter review.",
   "packageRules": [
     {
-      "description": "Bundle every non-major update into a single weekly PR and automerge once CI passes. Do NOT add lockFileMaintenance here: it is repo-wide (no package/datasource), so this groupName would concatenate onto its title ('lock file maintenance all non-major dependencies') and force it onto this shared weekly branch despite its own mon/wed/fri/sun schedule. It already automerges standalone via default.json's lockFileMaintenance block.",
-      "matchUpdateTypes": ["patch", "minor", "pin", "digest", "pinDigest"],
+      "description": "Bundle every non-major update into a single weekly PR and automerge once CI passes. Do NOT add lockFileMaintenance here: it is repo-wide (no package/datasource), so this groupName would concatenate onto its title ('lock file maintenance all non-major dependencies') and force it onto this shared weekly branch despite its own mon/wed/fri/sun schedule. It already automerges standalone via default.json's lockFileMaintenance block. `pin` and `pinDigest` are NO LONGER HERE — they moved to the `pins` rule below so they can run off-schedule; see that rule. `digest` stays, because a digest REFRESH is a content change, not a pin.",
+      "matchUpdateTypes": ["patch", "minor", "digest"],
       "groupName": "all non-major dependencies",
+      "automerge": true,
+      "automergeType": "pr"
+    },
+    {
+      "description": "Pins get their OWN branch so they can run at any time. default.json gives `pin`/`pinDigest` `schedule: ['at any time']`, but a groupName is a BRANCH name and a branch gets ONE schedule — leaving them in the `all non-major dependencies` bundle above would have parked every pin on the weekly branch and made that override inert. Splitting the group is what makes it take effect (same mechanism alpine.json documents for its off-schedule apk group). Still GROUPED rather than ungrouped: a repo adopting these presets for the first time has every unpinned range and every floating tag convert at once, and one `pins` PR is reviewable where N single-dep PRs are not. Automerge is safe for the same reason the soak is skipped — neither update type changes a resolved version, so CI is re-running the identical bytes it already passed. Keep this matchUpdateTypes list in sync with default.json's off-schedule rule; if they drift, pins land on a branch whose schedule does not match their own and quietly revert to Monday.",
+      "matchUpdateTypes": ["pin", "pinDigest"],
+      "groupName": "pins",
       "automerge": true,
       "automergeType": "pr"
     }
