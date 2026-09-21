@@ -26,6 +26,14 @@ jobs:
         with:
           persist-credentials: false
 
+      # Behavior gate. The validator below is a SCHEMA check and cannot tell a
+      # working customManager regex from a broken one — #108 shipped a phantom
+      # dep to every consumer with validation green. This runs the real
+      # extractor and the real auto-replacer out of the image's own Renovate
+      # install against committed fixtures, so it needs no toolchain of its own.
+      - name: Test customManager behavior
+        run: node test/custom-managers.mjs
+
       - name: Validate Renovate presets
         run: |
           renovate-config-validator --strict \

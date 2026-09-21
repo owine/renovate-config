@@ -36,6 +36,31 @@ Only extend the ecosystem presets a repo actually uses. Extend `:mcp` *after* `:
 | `alpine.json` | Alpine updates. apk pins (**built-in `apk` datasource**, extracted from `RUN apk add` by the dockerfile manager since Renovate 44.96.0): one `alpine packages` group, 0-day soak, runs any time, **automerges every non-major bump (patch/pin/digest/minor) together**, and forces `rangeStrategy: replace` (without it every drifted pin goes silently dark). Gates **`node:*-alpine` image bumps** (minor/patch) to manual review. Also gates **alpine base-image (`docker`) minor bumps** to manual review (the base-image patch line automerges). Carved out of `automerge.json`'s bundle **and** of `docker.json`'s `dockerfile bases` group — extend after both. **Requires a consumer-side `registryUrls`** naming the Alpine release line (see Consumer notes). |
 | `home-assistant.json` | Home Assistant add-on repos. Pins the HA base image (`ghcr.io/home-assistant/base`) to a versioned tag + digest and gates its **minor bumps** to manual review (the tag *is* the Alpine line, so a bump means hand-editing the `branch=vX.Y` in the consumer's apk `registryUrls`); digest rebuilds automerge. Adds CalVer versioning for the `home-assistant/builder` action. Extend after `:automerge`/`:docker` (and `:alpine` if used). |
 
+## Tests
+
+`test/custom-managers.mjs` is a behavior gate for `default.json`'s two
+`customManagers`, run by CI before the validator. It matters because
+`renovate-config-validator --strict` is a **schema** check: every regex bug this
+repo has shipped — the phantom dep of #108, the cross-block bind of #4 — passed
+validation cleanly.
+
+It imports the real extractor and the real auto-replacer out of the Renovate
+install already inside the CI container, so assertions run against the same
+engine Mend-hosted does, and the repo needs no `package.json`, lockfile or
+toolchain of its own. Fixtures under `test/fixtures/` are frozen copies of
+shapes that exist in the fleet; each says which invariant it guards and, where
+the rewrite is non-obvious, the test also drives `doAutoReplace` and asserts
+that exactly one line changed.
+
+Locally:
+
+```sh
+npm i renovate && RENOVATE_DIST=./node_modules/renovate/dist node test/custom-managers.mjs
+```
+
+Exit codes: `0` pass, `1` a behavior regression, `2` the Renovate dist moved
+(a layout problem, not a config one — likely an image bump).
+
 ## Commit types & release-please
 
 These presets are tuned for consumer repos running [release-please](https://github.com/googleapis/release-please), which parses the Conventional Commit **type** to decide releases: `feat` → minor, `fix`/`deps` → patch, `chore`/`ci` → **hidden, no release**.

@@ -1,0 +1,28 @@
+# frozen fixture — do not bump. Negative case: a `workflow_call` input named
+# `runner` that has NO `default:`, followed by a sibling input that does. The
+# multi-line pattern must extract NOTHING here.
+#
+# What stops it is the `\S` in the intervening-line subpattern: every skipped
+# line has to carry a `key: value` pair, so the chain breaks at `platforms:`,
+# a bare block-opening key. Without that stop, the runner input would steal the
+# SIBLING's default and a bump would rewrite the wrong input.
+#
+# Kept deliberately SHORT — five intervening lines, inside the <=6 bound — so
+# the bare-key stop is the only thing preventing the match. At seven or more
+# lines the bound would mask it and this fixture would prove nothing.
+name: reusable
+on:
+  workflow_call:
+    inputs:
+      runner:
+        description: "Runner label(s) for jobs"
+        type: string
+      platforms:
+        description: "Comma-separated target platforms"
+        type: string
+        default: 'ubuntu-26.04'
+jobs:
+  lint:
+    runs-on: ${{ inputs.runner }}
+    steps:
+      - run: echo lint

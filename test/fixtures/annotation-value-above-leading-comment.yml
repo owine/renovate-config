@@ -1,0 +1,19 @@
+# frozen fixture — do not bump. PR #4's regression guard. An UNANNOTATED version
+# literal sits immediately above a leading-comment annotation. When the
+# trailing-comment pattern used `\s*` between the value and the `#` — `\s`
+# matches `\n` — the PNPM literal bound to the NEXT line's hint and was reported
+# as a `node` update. Observed in owine/house-manager. Only PNPM_VERSION's
+# neighbour makes this shape dangerous, so the two lines must stay adjacent.
+#
+# Expected: exactly ONE dep, node @ 24.21.0, from the leading-comment pattern.
+name: ci
+on: [push]
+jobs:
+  build:
+    runs-on: ubuntu-26.04
+    env:
+      PNPM_VERSION: '11.1.0'
+      # renovate: datasource=node-version depName=node versioning=node
+      NODE_VERSION: '24.21.0'
+    steps:
+      - run: echo "$PNPM_VERSION $NODE_VERSION"

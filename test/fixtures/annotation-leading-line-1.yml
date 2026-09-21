@@ -1,0 +1,5 @@
+# renovate: datasource=node-version depName=node versioning=node
+NODE_VERSION: "24.21.0"
+# frozen fixture — do not bump. The annotation sits on LINE 1, reachable only
+# by the `^` alternative of the anchor: matchStrings compile with `g` and no
+# `m`, so `^` means start-of-string and `\n` alone cannot match here.

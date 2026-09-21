@@ -1,0 +1,13 @@
+# frozen fixture — do not bump. Leading-comment style on a job-level env var,
+# the shape owine/compose-workflow uses. Nothing in the fleet that extends this
+# preset writes this style today, so this fixture IS the coverage.
+name: lint
+on: [push]
+jobs:
+  lint:
+    runs-on: ubuntu-26.04
+    env:
+      # renovate: datasource=node-version depName=node versioning=node
+      NODE_VERSION: "24.21.0"
+    steps:
+      - run: echo "$NODE_VERSION"

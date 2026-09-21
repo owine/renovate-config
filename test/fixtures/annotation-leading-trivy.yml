@@ -1,0 +1,18 @@
+# frozen fixture — do not bump. Leading-comment style on an action input, the
+# shape owine/unifi-protect-mcp carries. The three prose comment lines above the
+# annotation deliberately name the SAME version literal: auto-replace must
+# rewrite only the `version:` line, never the prose.
+name: ci
+on: [push]
+jobs:
+  scan:
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: aquasecurity/trivy-action@0.33.1
+        with:
+          # Pinned to v0.74.0. The trivy-action default silently reported clean
+          # because nothing was vulnerable. v0.74.0 reads both documents
+          # (verified: 93 packages extracted, was 0). Remove this pin once a
+          # trivy-action release ships v0.74.0+ as its default.
+          # renovate: datasource=github-releases depName=aquasecurity/trivy
+          version: v0.74.0
