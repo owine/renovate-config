@@ -1,0 +1,20 @@
+# frozen fixture — do not bump. Shape (a): `matrix.include[]` entries, as in
+# doc-scanner, youth-activity-scheduler, nut-cgi,
+# MLB-Deferred-Contract-Calculator and house-manager. The built-in
+# github-actions manager reads literal `runs-on:` ONLY, so without this
+# customManager the arm lane is invisible and merging Renovate's partial PR
+# ships a green split-brain build.
+name: build
+on: [push]
+jobs:
+  build:
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-26.04
+          - platform: linux/arm64
+            runner: ubuntu-26.04-arm
+    steps:
+      - run: uname -m

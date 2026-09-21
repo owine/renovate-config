@@ -1,0 +1,17 @@
+# frozen fixture — do not bump. The DANGEROUS ordering. Identical to
+# annotation-trailing-matrix.yml with the two lanes swapped. Before #108 the
+# phantom here was node-lts-24 @ 22.23.2, which RESOLVES (nothing caps it out
+# of range), rewriting the 22 lane's literal to a 24.x and silently collapsing
+# the matrix to 24/24 while CI stays green. Ascending order was the only thing
+# making the bug inert; this fixture removes that luck.
+name: ci
+on: [push]
+jobs:
+  test:
+    strategy:
+      matrix:
+        node-version:
+          - '24.21.0' # renovate: datasource=node-version depName=node-lts-24 packageName=node
+          - '22.23.2' # renovate: datasource=node-version depName=node-lts-22 packageName=node
+    steps:
+      - run: node --version

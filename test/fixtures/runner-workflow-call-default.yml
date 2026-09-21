@@ -1,0 +1,26 @@
+# frozen fixture — do not bump. Shape (b): a `workflow_call` input named
+# `runner` whose `default:` carries the label, as in owine/compose-workflow.
+# Two near-misses are deliberate and must NOT be extracted:
+#   - the `description:` line quotes a sample label, but `default:` is required
+#     immediately before the value, so it cannot match;
+#   - `platforms:` is a sibling input with its own `default:`, which the <=6
+#     intervening `key: value` line bound must not reach past.
+name: reusable
+on:
+  workflow_call:
+    inputs:
+      runner:
+        description: "Runner label(s) for jobs (e.g., 'ubuntu-24.04' or 'self-hosted')"
+        required: false
+        type: string
+        default: 'ubuntu-26.04'
+      platforms:
+        description: "Comma-separated target platforms"
+        required: false
+        type: string
+        default: 'linux/amd64'
+jobs:
+  lint:
+    runs-on: ${{ inputs.runner }}
+    steps:
+      - run: echo lint

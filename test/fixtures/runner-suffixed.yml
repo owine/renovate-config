@@ -1,0 +1,21 @@
+# frozen fixture — do not bump. INVARIANT guard: currentValue takes the WHOLE
+# remainder, suffix included. The github-runners datasource carries
+# `26.04-arm`, `15-large` and `15-intel` as DISTINCT versions — `24.04-arm` is
+# not `24.04` with decoration. A capture narrowed to `\d+\.\d+` would file the
+# arm runner under the x64 runner's version and could propose a label that does
+# not exist for arm. It would also stop matching the built-in manager's
+# extraction byte-for-byte, which is what collapses these deps into the SAME
+# branch as the literal `runs-on:` ones.
+name: build
+on: [push]
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - runner: ubuntu-26.04-arm
+          - runner: macos-15-large
+          - runner: macos-15-intel
+          - runner: windows-2025
+    steps:
+      - run: echo build
