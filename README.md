@@ -80,10 +80,17 @@ CI plumbing is hidden because it isn't observable to anyone consuming the publis
   manager-wide `pinDigests: true` therefore hard-errors the branch with
   `Error updating branch: update failure`, and the upgrade sits under **Errored** on
   the Dependency Dashboard. `default.json` negates `pinDigests` for `uses-with`.
+  - Negating `pinDigests` here removes an impossible operation, not a control: a
+    `version:` input has no digest slot to begin with. The version is still
+    extracted, tracked and updated — only the unwritable digest is skipped.
   - If a repo carries both a `# renovate:` annotation **and** an action whose
-    `version:` input Renovate reads natively, the same literal is tracked twice and
-    produces two identical updates on one branch. Drop the annotation — native
-    `uses-with` extraction already covers it.
+    `version:` input Renovate reads natively, the same literal is tracked twice.
+    The two deps resolve against **different release streams** (the annotation's
+    datasource vs. the action's native one — e.g. `pypi:ruff` vs.
+    `github-releases:astral-sh/ruff`), so the updates agree only as long as those
+    streams agree. They did in the observed case (both `0.16.8`); when they drift,
+    one branch carries two updates rewriting the same literal to different values.
+    Drop the annotation — native `uses-with` extraction already covers it.
 
 - **Pins can still slip to Monday inside an ecosystem group.** The groups in
   `node.json`/`python.json` and `docker.json`'s `github-actions-*` rules set no
