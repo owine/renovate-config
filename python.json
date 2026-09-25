@@ -1,6 +1,6 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "description": "Python ecosystem groupings (pep621/uv/poetry). Most rules bundle peer-dep or hard-pinned stacks that must move together (boto3/botocore is the strictest); scientific-python is explicitly churn reduction rather than break prevention. Each rule states which it is.",
+  "description": "Python ecosystem groupings (pep621/uv/poetry). Most rules bundle peer-dep or hard-pinned stacks that must move together (boto3/botocore is the strictest); scientific-python is explicitly churn reduction rather than break prevention. Each rule states which it is. `sentry-sdk` DELIBERATELY HAS NO RULE (decided 2026-09-25, ahead of trip-tracker and youth-activity-scheduler adopting it). It is ONE PyPI package whose integrations are extras (`sentry-sdk[fastapi]`), so a group would have one member. Its extras declare only floors (`fastapi>=0.79.0`, `starlette>=0.19.1`, `celery>=3`) and it detects framework versions at runtime, so there is no coupling to `fastapi-stack` or `celery` to protect. If a rule is ever added, scope it `matchManagers: [pep621]`, because npm has an unrelated `sentry-sdk` package (the `vine`/`playwright` hazard). Name it `sentry-python`, never `sentry`: that is node.json's group name, and a shared groupName merges both ecosystems onto one branch (the `opentelemetry-python`/`opentelemetry-js` convention).",
   "pep621": { "enabled": true },
   "packageRules": [
     {
