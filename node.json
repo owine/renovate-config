@@ -127,6 +127,12 @@
       "groupName": "cloudflare-workers"
     },
     {
+      "description": "`cf`, Cloudflare's successor CLI to wrangler, joins the SAME `cloudflare-workers` branch. Coupled, not churn reduction: a repo migrated with cf keeps a generated `wrangler.config.ts` that imports `wrangler/experimental-config`, so cf and wrangler must move in one PR. First adopters: owine/firerobertsaleh and owine/havethejetsmadetheplayoffsyet. A SEPARATE RULE SCOPED TO `matchDatasources: [npm]` BECAUSE `cf` IS A GENERIC NAME: PyPI publishes a `cf` package and mise's registry uses `cf` for the Cloud Foundry CLI, so a bare `cf` added to the rule above would pull either into this group (same reasoning as the `playwright` rule). NO PRERELEASE OVERRIDE NEEDED, verified against Renovate 44.121.0 `lookup/filter.ts`: while the current version is itself unstable (cf's `latest` dist-tag is `1.0.0-beta.N`), `ignoreUnstable` still admits unstable candidates with the same major.minor.patch, so `beta.N -> beta.N+1` and `-> 1.0.0` flow. `classifyRelease` calls those `patch`, so they take the normal 3-day soak, and the default `internalChecksFilter: strict` proposes the newest beta that has cleared it, so frequent betas never starve the update. What stays blocked is a prerelease of a DIFFERENT version (e.g. `1.1.0-beta.0` while on `1.0.x`) until it ships stable, which is Renovate's standard behavior and the one this preset wants.",
+      "matchDatasources": ["npm"],
+      "matchPackageNames": ["cf"],
+      "groupName": "cloudflare-workers"
+    },
+    {
       "description": "PRE-SEEDED, NOT YET IN THE FLEET. The rules from here to the end of this block cover ecosystems no owine repo installs today; they exist so that the FIRST repo to adopt one is grouped correctly on day one rather than discovering the split the way owine/youth-activity-scheduler#420/#421 did. A rule that matches nothing costs nothing at resolve time, and this preset already carries forward-looking entries on the same logic (see the node-lts-26 lane at the bottom of this file). Each is a single scope or release train verified to publish in lockstep; the soft ones are labelled as churn reduction rather than break prevention so a future reader does not mistake the justification. Storybook: every @storybook/* package is one monorepo release and the framework/builder/addon triple asserts on mismatch at boot.",
       "matchPackageNames": ["storybook", "/^@storybook//"],
       "groupName": "storybook"
