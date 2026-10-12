@@ -18,7 +18,7 @@
 //
 // Locally:  npm i renovate && RENOVATE_DIST=./node_modules/renovate/dist node test/python-runtime.mjs
 
-import { readFileSync, mkdtempSync, rmSync } from 'node:fs';
+import { readFileSync, readdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -77,6 +77,30 @@ const extractRequiresPython = async (requiresPython) => {
 const failures = [];
 const fail = (name, msg) => failures.push(`${name}\n    ${msg.replace(/\n/g, '\n    ')}`);
 let checks = 0;
+
+// ---------------------------------------------------------------------------
+// pep621 must stay reachable
+//
+// The shape cases below call the extractor directly, so they would still pass
+// with pep621 switched off. A preset that switched it off would stop every
+// exact pin from opening a PR at all, so check the two ways a preset can do
+// that: `pep621.enabled: false`, or an `enabledManagers` list without it.
+// ---------------------------------------------------------------------------
+{
+  checks++;
+  const name = 'pep621 is enabled by python.json and not excluded by any preset';
+  const presets = readdirSync(join(HERE, '..')).filter((f) => f.endsWith('.json') && f !== 'renovate.json');
+  const wrong = [];
+  if (preset('python.json').pep621?.enabled !== true) wrong.push('python.json: pep621.enabled is not true');
+  for (const f of presets) {
+    const p = preset(f);
+    if (p.pep621?.enabled === false) wrong.push(`${f}: sets pep621.enabled: false`);
+    if (Array.isArray(p.enabledManagers) && !p.enabledManagers.includes('pep621'))
+      wrong.push(`${f}: enabledManagers ${JSON.stringify(p.enabledManagers)} excludes pep621`);
+  }
+  if (wrong.length) fail(name, wrong.join('\n'));
+  else console.log(`  ok  ${name}`);
+}
 
 // ---------------------------------------------------------------------------
 // requires-python shapes
