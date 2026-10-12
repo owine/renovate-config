@@ -34,6 +34,12 @@ jobs:
       - name: Test customManager behavior
         run: node test/custom-managers.mjs
 
+      # Same engine, package-rule side: an exact `requires-python` pin must
+      # stay tracked by the native pep621 manager and grouped with its base
+      # image, and every other `requires-python` shape must stay disabled.
+      - name: Test python runtime behavior
+        run: node test/python-runtime.mjs
+
       - name: Validate Renovate presets
         run: |
           renovate-config-validator --strict \

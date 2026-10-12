@@ -30,7 +30,7 @@ Only extend the ecosystem presets a repo actually uses. Extend `:mcp` *after* `:
 | `default.json` | Baseline. Pinned ranges, 3-day soak, OSV alerts, GH Action digests, lockfile maintenance, pre-commit hook updates, weekly schedule (Mondays, `America/Chicago`). Majors separated into their own PRs and held for manual review. `rebaseWhen: auto` — Renovate rebases stale PRs only when safe (no manual edits, no conflicts); use the PR checkbox to force a rebase otherwise. Two `customManagers` for `.github/workflows/*.yml`: `# renovate: datasource=X depName=Y` annotations, and **non-literal runner labels** (`matrix.include[].runner`, `workflow_call` input defaults, JSON-in-`run:`) — see Consumer notes. |
 | `automerge.json` | Group all non-major updates into one weekly PR, automerge once CI passes. `pin`/`pinDigest` are split onto a separate `pins` PR so they can run at any time — a `groupName` is a branch name and a branch gets one schedule, so bundling them would have pinned them to Monday. Skip if you want hand-review of every patch. |
 | `node.json` | Node/TS ecosystem groupings (most are peer-dep/lockstep coupled; a few are explicitly churn reduction — each rule says which): React, TanStack, Radix (the unified `radix-ui` package **and** the legacy `@radix-ui/*` primitives, for migration coherence), Vite, Tailwind (`tailwindcss` + `@tailwindcss/*` only — **not** the third-party `tailwind-merge`/`tw-animate-css`), Vitest (the whole `@vitest/*` scope, incl. `@vitest/ui`) + testcontainers, Testing Library (the `@testing-library/react` + `@testing-library/dom` peer pair only), ESLint plugins, ESLint core (`eslint` + `@eslint/js`, deliberately a **separate** group from the plugins), Prisma, Auth.js, pg, Hono, Preact, Cloudflare Workers (wrangler/@cloudflare/miniflare, plus the npm `cf` CLI, which is coupled to wrangler via its generated `wrangler.config.ts` and scoped to npm because PyPI and mise also use the name `cf`), toolchain (node+pnpm). Plus Next.js (incl. `eslint-config-next`, which must stay ordered after `eslint plugins`), Playwright (**npm-scoped via `matchDatasources`** so it never reaches the PyPI package of the same name), react-hook-form, stylelint, tesseract.js, Sentry (the `getsentry/sentry-javascript` SDK monorepo **only**, matched by `matchSourceUrls` because the `@sentry/*` scope spans several release trains. The bundler plugins and `@sentry/cli` stay ungrouped). A trailing **pre-seeded** block covers ecosystems no repo uses yet (storybook, OpenTelemetry, AWS SDK, tRPC, drizzle, NestJS, Babel, SWC, jest, astro, nuxt, SvelteKit, expo, apollo, clerk, supabase) so the first adopter is grouped on day one. The AWS/OTel group names are ecosystem-suffixed (`aws-sdk-js`, `opentelemetry-js`) because a groupName is a branch name — sharing one with `python.json` would merge both ecosystems into a single cross-manager PR. |
-| `python.json` | pep621 ecosystem groupings (mostly peer-dep/hard-pinned; `scientific-python` is churn reduction): FastAPI stack, Pydantic, SQLAlchemy stack, pytest, lint/types tooling, boto3+botocore (hard pin), PyTorch trio, LangChain, OpenTelemetry, Celery (`vine` is also an npm name — the `matchManagers` scope is load-bearing), plus pre-seeded Django, Hugging Face, and numpy/scipy/pandas. `sentry-sdk` is deliberately **not** grouped: it's a single package whose integration extras set only version floors (see the file's top-level description). Plus a `python runtime` group binding an exact-pinned `requires-python` (via customManager) to the `python` Docker base image — **needs a manual `uv lock` commit**, see Consumer notes. |
+| `python.json` | pep621 ecosystem groupings (mostly peer-dep/hard-pinned; `scientific-python` is churn reduction): FastAPI stack, Pydantic, SQLAlchemy stack, pytest, lint/types tooling, boto3+botocore (hard pin), PyTorch trio, LangChain, OpenTelemetry, Celery (`vine` is also an npm name — the `matchManagers` scope is load-bearing), plus pre-seeded Django, Hugging Face, and numpy/scipy/pandas. `sentry-sdk` is deliberately **not** grouped: it's a single package whose integration extras set only version floors (see the file's top-level description). Plus a `python runtime` group binding an exact-pinned `requires-python` (native pep621 manager, so Renovate regenerates `uv.lock` itself) to the `python` Docker base image. Every other `requires-python` shape (`>=3.10`, `~=3.14`, `==3.14.*`) is metadata and stays untracked. See Consumer notes. |
 | `docker.json` | Dockerfile base bundling, GH Actions setup/artifact/docker families, runtime-major flags. The `dockerfile bases` group **excludes the language-runtime images** (`node`/`pnpm`/`python`, both bare and `docker.io/library/…` spellings) so they stay with their own runtime groups — see Consumer notes. |
 | `mcp.json` | MCP server repos: isolate `@modelcontextprotocol/sdk` for manual review (no automerge), keep `engines.node` unpinned for library consumers. Extend after `node.json`. |
 | `alpine.json` | Alpine updates. apk pins (**built-in `apk` datasource**, extracted from `RUN apk add` by the dockerfile manager since Renovate 44.96.0): one `alpine packages` group, 0-day soak, runs any time, **automerges every non-major bump (patch/pin/digest/minor) together**, and forces `rangeStrategy: replace` (without it every drifted pin goes silently dark). Gates **`node:*-alpine` image bumps** (minor/patch) to manual review. Also gates **alpine base-image (`docker`) minor bumps** to manual review (the base-image patch line automerges). Carved out of `automerge.json`'s bundle **and** of `docker.json`'s `dockerfile bases` group — extend after both. **Requires a consumer-side `registryUrls`** naming the Alpine release line (see Consumer notes). |
@@ -316,22 +316,40 @@ CI plumbing is hidden because it isn't observable to anyone consuming the publis
   `.` and `/` literal, so `python-slim`, `my.registry/python`, `nodered/node-red`,
   and `docker.io/library/postgres` all still group as `dockerfile bases`.
 
-- **A `python runtime` PR lands red and needs a manual `uv lock` commit.**
-  `uv.lock` carries its own `requires-python`, and nothing in these presets can
-  refresh it: the exact-pin tracker is a `customManager` (a text substitution
-  that runs no lockfile update), and `postUpgradeTasks` isn't available on the
-  Mend-hosted app. Push one hand-authored `uv lock` commit to the PR branch or
-  every uv job fails `The current Python version … is not compatible with the
-  locked Python requirement`. Lockfile maintenance reconciles `uv.lock`
-  eventually, but on its own schedule and on a different branch — it will not
-  unblock the open PR.
+- **A `python runtime` PR regenerates `uv.lock` itself. Don't push to it.**
+  `uv.lock` carries its own `requires-python`, so an exact `requires-python =
+  "==X.Y.Z"` pin is tracked by the **native** pep621 manager. Its uv artifact
+  step runs `uv lock --upgrade-package python` against the bumped pin and
+  commits the result (a one-line `requires-python` change in `uv.lock`). Only
+  the exact `==X.Y.Z` triple is tracked. Floor ranges, `~=`, `==3.14.*`, and
+  compound specifiers are min-version metadata and are disabled. Keep
+  `UV_PYTHON_DOWNLOADS=never` in the image so a pin the system Python can't
+  satisfy fails the build instead of quietly falling back to a uv-managed
+  interpreter.
+
+  The group can still **open split**, and that's expected. `minimumReleaseAge`
+  is checked per dependency against its own datasource. `python-version` dates
+  a release by CPython's release date, while the Docker side uses Docker Hub's
+  `tag_last_pushed`, which lags behind it. So the pyproject + `uv.lock` half can
+  open `renovate/python-runtime` alone and stay red at the Docker build until
+  the base-image half clears its soak. Renovate then adds that half to the same
+  branch, and the PR goes green on its own. **Don't push a fix in the
+  meantime**: a human commit makes Renovate treat the branch as edited, so the
+  Dockerfile half never lands (owine/trip-tracker #282).
+
+  If the artifact step itself fails, the PR still opens with the pyproject bump
+  and an unchanged `uv.lock`. You'll see it: Renovate posts an *Artifact update
+  problem* comment with uv's stderr and fails the `renovate/artifacts` check. Use
+  the PR's retry checkbox once the cause is fixed. A failed install of the
+  exact CPython is unlikely, because `python-version` only offers versions that
+  already have a containerbase prebuild.
 
   What each split actually breaks:
 
   | Runtime | Split halves | Failure on *both* halves |
   |---------|--------------|--------------------------|
   | Node | `FROM node:X` vs `.nvmrc` + `engines.node` + `packageManager` | `ERR_PNPM_UNSUPPORTED_ENGINE` under `engineStrict`, mirrored expected/got |
-  | Python | `FROM python:X` vs `requires-python = "==X.Y.Z"` | `No interpreter found for Python <old>` / `not compatible with the locked Python requirement` |
+  | Python | `FROM python:X` vs `requires-python = "==X.Y.Z"` + `uv.lock` | `No interpreter found for Python <old>` / the old base image can't satisfy the new pin |
 
   Digest pinning is unaffected either way: `pinDigests` comes from
   `default.json`'s `matchManagers: ["dockerfile", "github-actions"]` rule, and
