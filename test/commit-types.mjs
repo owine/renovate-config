@@ -5,17 +5,23 @@
 // WHY THIS EXISTS: a groupName is a branch name, and a branch gets ONE commit
 // message. Renovate types it with the highest-priority type among the
 // branch's upgrades, from the fixed list [chore, ci, build, fix, feat]
-// (generateBranchConfig). `deps` is not in that list, so a single `ci:`
-// upgrade makes the whole branch `ci:`, and release-please treats `ci:` as
-// hidden. owine/unifi-protect-mcp #284 shipped the production dependency
+// (generateBranchConfig). `deps` is not in that list, so a single `ci:` or
+// `chore:` upgrade retypes the whole branch, and release-please treats both
+// as hidden. owine/unifi-protect-mcp #284 shipped the production dependency
 // `ws` 8.22.0 that way, with no CHANGELOG entry, because an Actions bump
 // shared its `all non-major dependencies` branch.
 //
-// automerge.json now routes CI plumbing onto `all non-major ci dependencies`
-// with matchers that mirror default.json's two `ci:` rules. Nothing links the
-// two files, and `renovate-config-validator --strict` cannot see a drift, so
-// this test checks both: that the matchers are identical, and that every
-// group the presets produce carries a single commit type.
+// Two splits keep hidden types off the `deps:` bundle, each typed in one file
+// and grouped in another:
+//   - CI plumbing: typed `ci:` in default.json, grouped by automerge.json
+//     onto `all non-major ci dependencies`.
+//   - Dev-only deps of npm LIBRARIES: typed `chore:` in mcp.json, grouped by
+//     mcp.json onto `all non-major dev dependencies`, with the update types
+//     of automerge.json's bundle.
+// Nothing links the copies, and `renovate-config-validator --strict` cannot
+// see a drift, so this test checks both: that the matchers are identical,
+// and that every group the presets produce carries a single commit type, for
+// an app consumer and for an MCP-library consumer.
 //
 // Same approach as custom-managers.mjs: the real preset resolver and the real
 // package-rule engine out of the Renovate dist the validate workflow's
@@ -55,6 +61,7 @@ await init();
 const preset = (f) => JSON.parse(readFileSync(join(HERE, '..', f), 'utf8'));
 const defaults = preset('default.json');
 const automerge = preset('automerge.json');
+const mcp = preset('mcp.json');
 
 const failures = [];
 const fail = (name, msg) => failures.push(`${name}\n    ${msg.replace(/\n/g, '\n    ')}`);
@@ -62,15 +69,16 @@ let checks = 0;
 const ok = (name) => console.log(`  ok  ${name}`);
 
 const CI_GROUP = 'all non-major ci dependencies';
+const DEV_GROUP = 'all non-major dev dependencies';
 const BUNDLE = 'all non-major dependencies';
+const SECURITY = defaults.vulnerabilityAlerts.groupName;
 
 // ---------------------------------------------------------------------------
-// Structural: the two definitions of "CI plumbing" must be identical
+// Structural: each typing rule and its grouping twin must match identically
 //
-// default.json decides what is TYPED `ci:`; automerge.json decides what is
-// GROUPED as CI. Compare every match* field except matchUpdateTypes (which
-// only automerge.json sets), so adding a third `ci:` rule, or widening one,
-// fails here until the other file follows.
+// Compare every match* field except matchUpdateTypes (only the group rules
+// set it), so adding a typing rule, or widening one, fails here until the
+// group side follows.
 // ---------------------------------------------------------------------------
 const matchers = (rule) =>
   JSON.stringify(
@@ -80,30 +88,34 @@ const matchers = (rule) =>
         .sort(([a], [b]) => a.localeCompare(b)),
     ),
   );
-
-{
+const sameSet = (name, typedLabel, typed, groupedLabel, grouped) => {
   checks++;
-  const name = "automerge.json's CI group mirrors default.json's `ci:` rules exactly";
-  const typed = defaults.packageRules.filter((r) => r.semanticCommitType === 'ci').map(matchers).sort();
-  const grouped = automerge.packageRules.filter((r) => r.groupName === CI_GROUP).map(matchers).sort();
-  if (JSON.stringify(typed) !== JSON.stringify(grouped))
-    fail(name, `default.json types as ci:\n  ${typed.join('\n  ')}\nautomerge.json groups as CI:\n  ${grouped.join('\n  ')}`);
-  else ok(`${name} (${typed.length} rules)`);
-}
-
-{
+  typed = typed.map(matchers).sort();
+  grouped = grouped.map(matchers).sort();
+  if (!typed.length || JSON.stringify(typed) !== JSON.stringify(grouped))
+    fail(name, `${typedLabel}:\n  ${typed.join('\n  ')}\n${groupedLabel}:\n  ${grouped.join('\n  ')}`);
+  else ok(`${name} (${typed.length} rule${typed.length > 1 ? 's' : ''})`);
+};
+const bundle = automerge.packageRules.find((r) => r.groupName === BUNDLE);
+const bundleTypes = JSON.stringify([...bundle.matchUpdateTypes].sort());
+const sameUpdateTypes = (name, rules) => {
   checks++;
-  const name = 'the CI group takes the same update types as the bundle, and no pins';
-  const bundle = automerge.packageRules.find((r) => r.groupName === BUNDLE);
-  const want = JSON.stringify([...bundle.matchUpdateTypes].sort());
-  const wrong = automerge.packageRules
-    .filter((r) => r.groupName === CI_GROUP)
-    .filter((r) => JSON.stringify([...(r.matchUpdateTypes ?? [])].sort()) !== want)
+  const wrong = rules
+    .filter((r) => JSON.stringify([...(r.matchUpdateTypes ?? [])].sort()) !== bundleTypes)
     .map((r) => matchers(r) + ' has ' + JSON.stringify(r.matchUpdateTypes));
-  if (wrong.length) fail(name, `expected matchUpdateTypes ${want}\n${wrong.join('\n')}`);
+  if (wrong.length) fail(name, `expected matchUpdateTypes ${bundleTypes} (automerge.json's bundle)\n${wrong.join('\n')}`);
   else ok(name);
-}
+};
 
+const ciGroupRules = automerge.packageRules.filter((r) => r.groupName === CI_GROUP);
+sameSet(
+  "automerge.json's CI group mirrors default.json's `ci:` rules exactly",
+  'default.json types as ci:',
+  defaults.packageRules.filter((r) => r.semanticCommitType === 'ci'),
+  'automerge.json groups as CI:',
+  ciGroupRules,
+);
+sameUpdateTypes('the CI group takes the same update types as the bundle, and no pins', ciGroupRules);
 {
   checks++;
   const name = 'the CI group comes AFTER the bundle (last match wins)';
@@ -112,95 +124,196 @@ const matchers = (rule) =>
   else ok(name);
 }
 
+const devGroupRules = mcp.packageRules.filter((r) => r.groupName === DEV_GROUP);
+sameSet(
+  "mcp.json's dev group mirrors mcp.json's `chore:` devDependencies rules exactly",
+  'mcp.json types devDependencies as chore:',
+  mcp.packageRules.filter((r) => r.semanticCommitType === 'chore' && r.matchDepTypes?.includes('devDependencies')),
+  'mcp.json groups as dev:',
+  devGroupRules,
+);
+sameUpdateTypes("the dev group takes the same update types as automerge.json's bundle, and no pins", devGroupRules);
+{
+  checks++;
+  const name = 'the dev group sets no automerge of its own (it inherits automerge.json)';
+  const wrong = devGroupRules.filter((r) => 'automerge' in r || 'automergeType' in r);
+  if (wrong.length) fail(name, `mcp.json would turn automerge on in a repo that never extended :automerge`);
+  else ok(name);
+}
+
 // ---------------------------------------------------------------------------
 // Behavioral: route real-shaped upgrades through the full rule chain
 //
 // Built-in rules first (config:best-practices pulls in
 // :semanticPrefixFixDepsChoreOthers, the `* => chore` this fleet overrides),
-// then the presets in the fleet's documented extends order.
+// then the presets in each consumer's extends order.
 // ---------------------------------------------------------------------------
-const builtin = await resolveConfigPresets({ extends: defaults.extends });
-const packageRules = [
-  ...(builtin.packageRules ?? []),
-  ...['default.json', 'automerge.json', 'node.json', 'python.json', 'docker.json', 'mcp.json'].flatMap(
-    (f) => preset(f).packageRules ?? [],
-  ),
-];
+const builtin = (await resolveConfigPresets({ extends: defaults.extends })).packageRules ?? [];
+const rulesFor = (files) => [...builtin, ...files.flatMap((f) => preset(f).packageRules ?? [])];
+
+// A vulnerable dep gets the rule Renovate builds in init/vulnerability.ts and
+// process/vulnerabilities.ts: appended LAST, carrying vulnerabilityAlerts as
+// `force`. Built here the same way, so a change to vulnerabilityAlerts is
+// what this exercises.
+const vulnRule = (u) => ({
+  matchDatasources: [u.datasource],
+  matchPackageNames: [u.depName],
+  ...(u.depType ? { matchDepTypes: [u.depType] } : {}),
+  matchCurrentVersion: u.currentVersion,
+  allowedVersions: '>' + u.currentVersion,
+  isVulnerabilityAlert: true,
+  force: { ...defaults.vulnerabilityAlerts },
+});
 
 const WF = '.github/workflows/ci.yml';
-const cases = [
-  // The #284 mix: these three were on one branch.
-  { why: 'production npm dep (ws in #284)', u: { manager: 'npm', depName: 'ws', datasource: 'npm', depType: 'dependencies', packageFile: 'package.json', updateType: 'minor' }, group: BUNDLE, type: 'deps' },
-  { why: 'npm dep (zod, pending at time of fix)', u: { manager: 'npm', depName: 'zod', datasource: 'npm', depType: 'dependencies', packageFile: 'package.json', updateType: 'patch' }, group: BUNDLE, type: 'deps' },
-  { why: 'npm devDependency (lefthook)', u: { manager: 'npm', depName: 'lefthook', datasource: 'npm', depType: 'devDependencies', packageFile: 'package.json', updateType: 'patch' }, group: BUNDLE, type: 'deps' },
-  { why: 'Action bump (create-github-app-token)', u: { manager: 'github-actions', depName: 'actions/create-github-app-token', datasource: 'github-tags', depType: 'action', packageFile: '.github/workflows/release.yml', updateType: 'minor' }, group: CI_GROUP, type: 'ci' },
+const npmDep = (depName, depType, updateType, extra = {}) => ({ manager: 'npm', depName, datasource: 'npm', depType, packageFile: 'package.json', updateType, ...extra });
+const action = (depName, updateType, packageFile = WF) => ({ manager: 'github-actions', depName, datasource: 'github-tags', depType: 'action', packageFile, updateType });
 
-  // Every way something becomes `ci:` must land on the CI branch.
-  { why: 'Action digest refresh', u: { manager: 'github-actions', depName: 'actions/checkout', datasource: 'github-tags', depType: 'action', packageFile: WF, updateType: 'digest' }, group: 'github-actions-setup', type: 'ci' },
-  { why: 'Action in a composite action.yml (manager rule, not path rule)', u: { manager: 'github-actions', depName: 'some/action', datasource: 'github-tags', depType: 'action', packageFile: '.github/actions/setup/action.yml', updateType: 'patch' }, group: CI_GROUP, type: 'ci' },
-  { why: 'literal `runs-on:` runner (github-actions manager)', u: { manager: 'github-actions', depName: 'ubuntu', datasource: 'github-runners', depType: 'github-runner', packageFile: WF, updateType: 'minor' }, group: CI_GROUP, type: 'ci' },
-  { why: 'matrix `runner:` label (custom.regex, path rule): same branch as runs-on', u: { manager: 'regex', depName: 'ubuntu', datasource: 'github-runners', packageFile: WF, updateType: 'minor' }, group: CI_GROUP, type: 'ci' },
-  { why: 'annotated workflow literal (custom.regex trivy)', u: { manager: 'regex', depName: 'aquasecurity/trivy', datasource: 'github-releases', packageFile: WF, updateType: 'patch' }, group: CI_GROUP, type: 'ci' },
-  { why: 'docker.json family group stays ci-only', u: { manager: 'github-actions', depName: 'pnpm/setup', datasource: 'github-tags', depType: 'action', packageFile: WF, updateType: 'minor' }, group: 'github-actions-setup', type: 'ci' },
+const consumers = [
+  {
+    name: 'app',
+    files: ['default.json', 'automerge.json', 'node.json', 'python.json', 'docker.json'],
+    cases: [
+      // The #284 mix: these three were on one branch.
+      { why: 'production npm dep (ws in #284)', u: npmDep('ws', 'dependencies', 'minor'), group: BUNDLE, type: 'deps' },
+      { why: 'npm dep (zod)', u: npmDep('zod', 'dependencies', 'patch'), group: BUNDLE, type: 'deps' },
+      { why: 'npm devDependency: apps release on it, no dev split without :mcp', u: npmDep('lefthook', 'devDependencies', 'patch'), group: BUNDLE, type: 'deps' },
+      { why: 'Action bump (create-github-app-token)', u: action('actions/create-github-app-token', 'minor', '.github/workflows/release.yml'), group: CI_GROUP, type: 'ci' },
 
-  // The path rule must not reach outside .github/workflows.
-  { why: 'custom.regex OUTSIDE workflows stays deps', u: { manager: 'regex', depName: 'some-tool', datasource: 'github-releases', packageFile: 'Dockerfile', updateType: 'patch' }, group: BUNDLE, type: 'deps' },
-  { why: 'Dockerfile base stays deps', u: { manager: 'dockerfile', depName: 'debian', datasource: 'docker', packageFile: 'Dockerfile', updateType: 'patch' }, group: 'dockerfile bases', type: 'deps' },
+      // Every way something becomes `ci:` must land on the CI branch.
+      { why: 'Action digest refresh', u: action('actions/checkout', 'digest'), group: 'github-actions-setup', type: 'ci' },
+      { why: 'Action in a composite action.yml (manager rule, not path rule)', u: action('some/action', 'patch', '.github/actions/setup/action.yml'), group: CI_GROUP, type: 'ci' },
+      { why: 'literal `runs-on:` runner (github-actions manager)', u: { manager: 'github-actions', depName: 'ubuntu', datasource: 'github-runners', depType: 'github-runner', packageFile: WF, updateType: 'minor' }, group: CI_GROUP, type: 'ci' },
+      { why: 'matrix `runner:` label (custom.regex, path rule): same branch as runs-on', u: { manager: 'regex', depName: 'ubuntu', datasource: 'github-runners', packageFile: WF, updateType: 'minor' }, group: CI_GROUP, type: 'ci' },
+      { why: 'annotated workflow literal (custom.regex trivy)', u: { manager: 'regex', depName: 'aquasecurity/trivy', datasource: 'github-releases', packageFile: WF, updateType: 'patch' }, group: CI_GROUP, type: 'ci' },
+      { why: 'docker.json family group stays ci-only', u: action('pnpm/setup', 'minor'), group: 'github-actions-setup', type: 'ci' },
 
-  // Carve-outs that must survive the split.
-  { why: 'Action pinDigest stays on `pins`', u: { manager: 'github-actions', depName: 'some/action', datasource: 'github-tags', depType: 'action', packageFile: WF, updateType: 'pinDigest' }, group: 'pins', type: 'ci' },
-  { why: 'npm range pin stays on `pins`', u: { manager: 'npm', depName: 'zod', datasource: 'npm', depType: 'dependencies', packageFile: 'package.json', updateType: 'pin' }, group: 'pins', type: 'deps' },
-  { why: 'Action major stays ungrouped', u: { manager: 'github-actions', depName: 'some/action', datasource: 'github-tags', depType: 'action', packageFile: WF, updateType: 'major' }, group: undefined, type: 'ci' },
-  { why: 'lock file maintenance stays chore', u: { manager: 'npm', updateType: 'lockFileMaintenance', packageFile: 'package.json' }, group: undefined, type: 'chore' },
+      // The path rule must not reach outside .github/workflows.
+      { why: 'custom.regex OUTSIDE workflows stays deps', u: { manager: 'regex', depName: 'some-tool', datasource: 'github-releases', packageFile: 'Dockerfile', updateType: 'patch' }, group: BUNDLE, type: 'deps' },
+      { why: 'Dockerfile base stays deps', u: { manager: 'dockerfile', depName: 'debian', datasource: 'docker', packageFile: 'Dockerfile', updateType: 'patch' }, group: 'dockerfile bases', type: 'deps' },
 
-  // Runtime groups: fed by both shipping manifests and workflow inputs. See KNOWN_MIXED.
-  { why: 'packageManager pnpm', u: { manager: 'npm', depName: 'pnpm', datasource: 'npm', depType: 'packageManager', packageFile: 'package.json', updateType: 'patch' }, group: 'toolchain-versions', type: 'deps' },
-  { why: '.nvmrc node', u: { manager: 'nvm', depName: 'node', datasource: 'node-version', packageFile: '.nvmrc', updateType: 'patch' }, group: 'toolchain-versions', type: 'deps' },
-  { why: 'setup-node `node-version:` literal (uses-with)', u: { manager: 'github-actions', depName: 'node', datasource: 'github-releases', depType: 'uses-with', packageFile: WF, updateType: 'patch' }, group: 'toolchain-versions', type: 'ci' },
-  { why: 'FROM python', u: { manager: 'dockerfile', depName: 'python', datasource: 'docker', packageFile: 'Dockerfile', updateType: 'patch' }, group: 'python runtime', type: 'deps' },
-  { why: 'setup-python `python-version:` literal (uses-with)', u: { manager: 'github-actions', depName: 'python', datasource: 'github-releases', depType: 'uses-with', packageFile: WF, updateType: 'patch' }, group: 'python runtime', type: 'ci' },
+      // Carve-outs that must survive the split.
+      { why: 'Action pinDigest stays on `pins`', u: action('some/action', 'pinDigest'), group: 'pins', type: 'ci' },
+      { why: 'npm range pin stays on `pins`', u: npmDep('zod', 'dependencies', 'pin'), group: 'pins', type: 'deps' },
+      { why: 'Action major stays ungrouped', u: action('some/action', 'major'), group: undefined, type: 'ci' },
+      { why: 'lock file maintenance stays chore', u: { manager: 'npm', updateType: 'lockFileMaintenance', packageFile: 'package.json' }, group: undefined, type: 'chore' },
+
+      // Runtime groups: fed by both shipping manifests and workflow inputs. See knownMixed.
+      { why: 'packageManager pnpm', u: npmDep('pnpm', 'packageManager', 'patch'), group: 'toolchain-versions', type: 'deps' },
+      { why: '.nvmrc node', u: { manager: 'nvm', depName: 'node', datasource: 'node-version', packageFile: '.nvmrc', updateType: 'patch' }, group: 'toolchain-versions', type: 'deps' },
+      { why: 'setup-node `node-version:` literal (uses-with)', u: { manager: 'github-actions', depName: 'node', datasource: 'github-releases', depType: 'uses-with', packageFile: WF, updateType: 'patch' }, group: 'toolchain-versions', type: 'ci' },
+      { why: 'FROM python', u: { manager: 'dockerfile', depName: 'python', datasource: 'docker', packageFile: 'Dockerfile', updateType: 'patch' }, group: 'python runtime', type: 'deps' },
+      { why: 'setup-python `python-version:` literal (uses-with)', u: { manager: 'github-actions', depName: 'python', datasource: 'github-releases', depType: 'uses-with', packageFile: WF, updateType: 'patch' }, group: 'python runtime', type: 'ci' },
+    ],
+    // Groups that CAN still carry two commit types, each with the reason it is
+    // accepted. A group listed here that stops mixing fails the run, so a
+    // later fix has to come and delete its entry.
+    knownMixed: {
+      pins: 'pin/pinDigest change no resolved version, so it does not matter that a mixed branch comes out `ci:` and does not release. Kept as one branch by design (automerge.json `pins`).',
+      'toolchain-versions':
+        'LATENT: only when a repo pins node/pnpm as a setup-node/pnpm action INPUT while also shipping it via .nvmrc/packageManager/Dockerfile. No preset consumer has that shape as of 2026-10-13. Splitting the group re-opens the runtime co-bump deadlock, so it is left open on purpose.',
+      'python runtime': 'LATENT: same shape as toolchain-versions, via setup-python `python-version:`. Same reason.',
+    },
+  },
+  {
+    // owine/unifi-protect-mcp and owine/unifi-network-mcp, in their extends order.
+    name: 'mcp',
+    files: ['default.json', 'automerge.json', 'node.json', 'mcp.json', 'docker.json'],
+    cases: [
+      // Runtime deps release; they ship to every consumer.
+      { why: 'production dep (ws)', u: npmDep('ws', 'dependencies', 'minor'), group: BUNDLE, type: 'deps', week: 'runtime' },
+      { why: 'production dep (zod)', u: npmDep('zod', 'dependencies', 'patch'), group: BUNDLE, type: 'deps' },
+      { why: 'MCP SDK keeps its review group', u: npmDep('@modelcontextprotocol/sdk', 'dependencies', 'minor'), group: 'mcp-sdk', type: 'deps' },
+      { why: 'production dep major stays deps', u: npmDep('ws', 'dependencies', 'major'), group: undefined, type: 'deps' },
+
+      // Dev-only deps: hidden, and on their own branch (2.15.0's noise).
+      { why: 'dev dep (lefthook)', u: npmDep('lefthook', 'devDependencies', 'patch'), group: DEV_GROUP, type: 'chore', week: 'dev' },
+      { why: 'dev dep (@types/node)', u: npmDep('@types/node', 'devDependencies', 'patch'), group: DEV_GROUP, type: 'chore' },
+      { why: 'dev dep in a node.json group (typescript-eslint) joins the dev branch', u: npmDep('typescript-eslint', 'devDependencies', 'patch'), group: DEV_GROUP, type: 'chore' },
+      { why: 'coupled dev pair stays together (vitest)', u: npmDep('vitest', 'devDependencies', 'patch'), group: DEV_GROUP, type: 'chore' },
+      { why: 'coupled dev pair stays together (@vitest/coverage-v8)', u: npmDep('@vitest/coverage-v8', 'devDependencies', 'patch'), group: DEV_GROUP, type: 'chore' },
+      { why: 'dev digest is non-major too', u: npmDep('lefthook', 'devDependencies', 'digest'), group: DEV_GROUP, type: 'chore' },
+      { why: 'dev major keeps its ecosystem group, hidden', u: npmDep('vitest', 'devDependencies', 'major'), group: 'testing', type: 'chore' },
+      { why: 'ungrouped dev major, hidden', u: npmDep('lefthook', 'devDependencies', 'major'), group: undefined, type: 'chore' },
+      { why: 'a type pair spanning dep kinds splits by kind (@types/pg)', u: npmDep('@types/pg', 'devDependencies', 'minor'), group: DEV_GROUP, type: 'chore' },
+      { why: 'a type pair spanning dep kinds splits by kind (pg)', u: npmDep('pg', 'dependencies', 'minor'), group: 'pg', type: 'deps' },
+
+      // Toolchain: dev-only members hidden, engines out of play.
+      { why: 'packageManager pnpm is dev-only', u: npmDep('pnpm', 'packageManager', 'patch'), group: 'toolchain-versions', type: 'chore' },
+      { why: '.nvmrc node is dev-only', u: { manager: 'nvm', depName: 'node', datasource: 'node-version', packageFile: '.nvmrc', updateType: 'patch' }, group: 'toolchain-versions', type: 'chore' },
+      { why: 'engines.node is consumer-visible: disabled, never typed', u: npmDep('node', 'engines', 'minor', { datasource: 'node-version' }), enabled: false },
+      { why: 'engines.pnpm is consumer-visible: disabled, never typed', u: npmDep('pnpm', 'engines', 'minor'), enabled: false },
+      { why: 'LATENT: Dockerfile `FROM node` (no MCP repo has one)', u: { manager: 'dockerfile', depName: 'node', datasource: 'docker', packageFile: 'Dockerfile', updateType: 'patch' }, group: 'toolchain-versions', type: 'deps' },
+
+      // Security still releases, dev or not.
+      { why: 'vulnerable DEV dep still releases as fix', u: npmDep('lefthook', 'devDependencies', 'patch', { currentVersion: '2.2.1' }), vuln: true, group: SECURITY, type: 'fix' },
+      { why: 'vulnerable runtime dep releases as fix', u: npmDep('ws', 'dependencies', 'patch', { currentVersion: '8.22.0' }), vuln: true, group: SECURITY, type: 'fix' },
+
+      // Unchanged by mcp.json.
+      { why: 'Action bump', u: action('actions/create-github-app-token', 'minor', '.github/workflows/release.yml'), group: CI_GROUP, type: 'ci' },
+      { why: 'dev range pin stays on `pins`', u: npmDep('lefthook', 'devDependencies', 'pin'), group: 'pins', type: 'chore' },
+      { why: 'runtime range pin stays on `pins`', u: npmDep('zod', 'dependencies', 'pin'), group: 'pins', type: 'deps' },
+      { why: 'lock file maintenance stays chore', u: { manager: 'npm', updateType: 'lockFileMaintenance', packageFile: 'package.json' }, group: undefined, type: 'chore' },
+    ],
+    knownMixed: {
+      pins: 'Same as for apps (pins change no resolved version); dev pins add `chore:` to the mix, which is equally harmless.',
+      'toolchain-versions':
+        'LATENT: only if an MCP repo builds a Docker image, whose `FROM node` is releasing `deps:` and would ship hidden on this `chore:` branch. Neither unifi-protect-mcp nor unifi-network-mcp has a Dockerfile (2026-10-13). Split the image out of the group before adding one.',
+    },
+  },
 ];
 
-// Groups that CAN still carry two commit types, each with the reason it is
-// accepted. A group listed here that stops mixing fails the run, so a later
-// fix has to come and delete its entry.
-const KNOWN_MIXED = {
-  pins: 'pin/pinDigest change no resolved version, so it does not matter that a mixed branch comes out `ci:` and does not release. Kept as one branch by design (automerge.json `pins`).',
-  'toolchain-versions':
-    'LATENT: only when a repo pins node/pnpm as a setup-node/pnpm action INPUT while also shipping it via .nvmrc/packageManager/Dockerfile. No preset consumer has that shape as of 2026-10-13. Splitting the group re-opens the runtime co-bump deadlock, so it is left open on purpose.',
-  'python runtime': 'LATENT: same shape as toolchain-versions, via setup-python `python-version:`. Same reason.',
-};
+for (const consumer of consumers) {
+  console.log(`\n[${consumer.name}] ${consumer.files.join(' -> ')}`);
+  const base = rulesFor(consumer.files);
+  const typesByGroup = new Map();
+  const groupOf = {};
 
-const typesByGroup = new Map();
-for (const c of cases) {
-  checks++;
-  const name = `${c.u.manager} ${c.u.depName ?? c.u.updateType} [${c.u.updateType}] — ${c.why}`;
-  const res = await applyPackageRules({ ...c.u, packageName: c.u.depName, packageRules });
-  const got = { group: res.groupName ?? undefined, type: res.semanticCommitType };
-  if (got.group !== c.group || got.type !== c.type) {
-    fail(name, `expected ${JSON.stringify({ group: c.group, type: c.type })}, got ${JSON.stringify(got)}`);
-    continue;
-  }
-  if (got.group) {
-    if (!typesByGroup.has(got.group)) typesByGroup.set(got.group, new Set());
-    typesByGroup.get(got.group).add(got.type);
-  }
-  ok(`${name} -> ${got.group ?? '(ungrouped)'} / ${got.type}:`);
-}
+  for (const c of consumer.cases) {
+    checks++;
+    const name = `${c.u.manager} ${c.u.depName ?? c.u.updateType} [${c.u.updateType}${c.u.depType ? ' ' + c.u.depType : ''}${c.vuln ? ' VULNERABLE' : ''}] — ${c.why}`;
+    const packageRules = c.vuln ? [...base, vulnRule(c.u)] : base;
+    const res = await applyPackageRules({ ...c.u, currentValue: c.u.currentVersion, packageName: c.u.depName, versioning: 'npm', packageRules });
 
-// ---------------------------------------------------------------------------
-// The property itself: no branch carries two commit types
-// ---------------------------------------------------------------------------
-for (const [group, types] of typesByGroup) {
-  checks++;
-  const mixed = types.size > 1;
-  const name = `group "${group}" carries one commit type`;
-  if (mixed && !KNOWN_MIXED[group])
-    fail(name, `carries ${[...types].join(' + ')}: the branch would be typed by priority and the losing updates would release wrongly`);
-  else if (!mixed && KNOWN_MIXED[group])
-    fail(name, `no longer mixes (only ${[...types].join()}); delete its KNOWN_MIXED entry`);
-  else if (mixed) console.log(`  --  ${name}: KNOWN MIXED (${[...types].join(' + ')}). ${KNOWN_MIXED[group]}`);
-  else ok(`${name} (${[...types].join()})`);
+    if (c.enabled === false) {
+      if (res.enabled !== false) fail(name, `expected enabled: false, got enabled: ${res.enabled} (type ${res.semanticCommitType}, group ${res.groupName})`);
+      else ok(`${name} -> disabled`);
+      continue;
+    }
+    const got = { group: res.groupName ?? undefined, type: res.semanticCommitType };
+    if (res.enabled === false || got.group !== c.group || got.type !== c.type) {
+      fail(name, `expected ${JSON.stringify({ group: c.group, type: c.type })}, got ${JSON.stringify({ ...got, enabled: res.enabled })}`);
+      continue;
+    }
+    if (c.week) groupOf[c.week] = got.group;
+    if (got.group && !c.vuln) {
+      if (!typesByGroup.has(got.group)) typesByGroup.set(got.group, new Set());
+      typesByGroup.get(got.group).add(got.type);
+    }
+    ok(`${name} -> ${got.group ?? '(ungrouped)'} / ${got.type}:`);
+  }
+
+  // The 2.15.0 week: a runtime bump and a dev bump pending together.
+  if ('runtime' in groupOf || 'dev' in groupOf) {
+    checks++;
+    const name = 'a runtime and a dev bump pending in the same week land on different branches';
+    if (!groupOf.runtime || !groupOf.dev || groupOf.runtime === groupOf.dev)
+      fail(name, `runtime -> ${groupOf.runtime}, dev -> ${groupOf.dev}`);
+    else ok(`${name} (${groupOf.runtime} | ${groupOf.dev})`);
+  }
+
+  // The property itself: no branch carries two commit types.
+  for (const [group, types] of typesByGroup) {
+    checks++;
+    const mixed = types.size > 1;
+    const name = `group "${group}" carries one commit type`;
+    const known = consumer.knownMixed[group];
+    if (mixed && !known)
+      fail(name, `carries ${[...types].join(' + ')}: the branch would be typed by priority and the losing updates would release wrongly`);
+    else if (!mixed && known) fail(name, `no longer mixes (only ${[...types].join()}); delete its knownMixed entry`);
+    else if (mixed) console.log(`  --  ${name}: KNOWN MIXED (${[...types].join(' + ')}). ${known}`);
+    else ok(`${name} (${[...types].join()})`);
+  }
 }
 
 if (failures.length) {

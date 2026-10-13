@@ -32,7 +32,7 @@ Only extend the ecosystem presets a repo actually uses. Extend `:mcp` *after* `:
 | `node.json` | Node/TS ecosystem groupings (most are peer-dep/lockstep coupled; a few are explicitly churn reduction — each rule says which): React, TanStack, Radix (the unified `radix-ui` package **and** the legacy `@radix-ui/*` primitives, for migration coherence), Vite, Tailwind (`tailwindcss` + `@tailwindcss/*` only — **not** the third-party `tailwind-merge`/`tw-animate-css`), Vitest (the whole `@vitest/*` scope, incl. `@vitest/ui`) + testcontainers, Testing Library (the `@testing-library/react` + `@testing-library/dom` peer pair only), ESLint plugins, ESLint core (`eslint` + `@eslint/js`, deliberately a **separate** group from the plugins), Prisma, Auth.js, pg, Hono, Preact, Cloudflare Workers (wrangler/@cloudflare/miniflare, plus the npm `cf` CLI, which is coupled to wrangler via its generated `wrangler.config.ts` and scoped to npm because PyPI and mise also use the name `cf`), toolchain (node+pnpm). Plus Next.js (incl. `eslint-config-next`, which must stay ordered after `eslint plugins`), Playwright (**npm-scoped via `matchDatasources`** so it never reaches the PyPI package of the same name), react-hook-form, stylelint, tesseract.js, Sentry (the `getsentry/sentry-javascript` SDK monorepo **only**, matched by `matchSourceUrls` because the `@sentry/*` scope spans several release trains. The bundler plugins and `@sentry/cli` stay ungrouped). A trailing **pre-seeded** block covers ecosystems no repo uses yet (storybook, OpenTelemetry, AWS SDK, tRPC, drizzle, NestJS, Babel, SWC, jest, astro, nuxt, SvelteKit, expo, apollo, clerk, supabase) so the first adopter is grouped on day one. The AWS/OTel group names are ecosystem-suffixed (`aws-sdk-js`, `opentelemetry-js`) because a groupName is a branch name — sharing one with `python.json` would merge both ecosystems into a single cross-manager PR. |
 | `python.json` | pep621 ecosystem groupings (mostly peer-dep/hard-pinned; `scientific-python` is churn reduction): FastAPI stack, Pydantic, SQLAlchemy stack, pytest, lint/types tooling, boto3+botocore (hard pin), PyTorch trio, LangChain, OpenTelemetry, Celery (`vine` is also an npm name — the `matchManagers` scope is load-bearing), plus pre-seeded Django, Hugging Face, and numpy/scipy/pandas. `sentry-sdk` is deliberately **not** grouped: it's a single package whose integration extras set only version floors (see the file's top-level description). Plus a `python runtime` group binding an exact-pinned `requires-python` (native pep621 manager, so Renovate regenerates `uv.lock` itself) to the `python` Docker base image. Every other `requires-python` shape (`>=3.10`, `~=3.14`, `==3.14.*`) is metadata and stays untracked. See Consumer notes. |
 | `docker.json` | Dockerfile base bundling, GH Actions setup/artifact/docker families, runtime-major flags. The `dockerfile bases` group **excludes the language-runtime images** (`node`/`pnpm`/`python`, both bare and `docker.io/library/…` spellings) so they stay with their own runtime groups — see Consumer notes. |
-| `mcp.json` | MCP server repos: isolate `@modelcontextprotocol/sdk` for manual review (no automerge), keep `engines.node` unpinned for library consumers. Extend after `node.json`. |
+| `mcp.json` | MCP server repos, i.e. **npm-published libraries**: isolate `@modelcontextprotocol/sdk` for manual review (no automerge); leave every `engines` range alone so library consumers keep a broad one; and commit **dev-only** updates (`devDependencies`, `packageManager`, `.nvmrc`) as `chore:`, so they stop cutting no-op patch releases. Non-major `devDependencies` get their own `all non-major dev dependencies` PR (automerge inherited from `automerge.json`), keeping `chore:` off the `deps:` bundle. Runtime `dependencies` and security fixes still release. See Commit types. Extend after `node.json`. |
 | `alpine.json` | Alpine updates. apk pins (**built-in `apk` datasource**, extracted from `RUN apk add` by the dockerfile manager since Renovate 44.96.0): one `alpine packages` group, 0-day soak, runs any time, **automerges every non-major bump (patch/pin/digest/minor) together**, and forces `rangeStrategy: replace` (without it every drifted pin goes silently dark). Gates **`node:*-alpine` image bumps** (minor/patch) to manual review. Also gates **alpine base-image (`docker`) minor bumps** to manual review (the base-image patch line automerges). Carved out of `automerge.json`'s bundle **and** of `docker.json`'s `dockerfile bases` group — extend after both. **Requires a consumer-side `registryUrls`** naming the Alpine release line (see Consumer notes). |
 | `home-assistant.json` | Home Assistant add-on repos. Pins the HA base image (`ghcr.io/home-assistant/base`) to a versioned tag + digest and gates its **minor bumps** to manual review (the tag *is* the Alpine line, so a bump means hand-editing the `branch=vX.Y` in the consumer's apk `registryUrls`); digest rebuilds automerge. Adds CalVer versioning for the `home-assistant/builder` action. Extend after `:automerge`/`:docker` (and `:alpine` if used). |
 
@@ -60,7 +60,7 @@ npm i renovate && RENOVATE_DIST=./node_modules/renovate/dist node test/custom-ma
 
 `test/python-runtime.mjs` and `test/commit-types.mjs` use the same engine on
 the package-rule side: the first checks `requires-python` tracking and grouping,
-the second checks that no group mixes `ci:` with `deps:` (see Commit types below).
+the second checks that no group mixes a hidden type (`ci:`, `chore:`) with `deps:` (see Commit types below).
 
 Exit codes: `0` pass, `1` a behavior regression, `2` the Renovate dist moved
 (a layout problem, not a config one — likely an image bump).
@@ -80,12 +80,22 @@ Renovate ships built-in default `packageRules` that type every bump `chore:` (np
 | GitHub Actions / workflow tooling | `ci:` | **no release** (hidden) |
 | security (`vulnerabilityAlerts`) | `fix:` | patch → *Bug Fixes* section |
 | lock file maintenance | `chore:` | **no release** (hidden) |
+| dev-only, **`mcp.json` only**: `devDependencies`, `packageManager`, `.nvmrc` | `chore:` | **no release** (hidden) |
 
-Rule precedence (last match wins) is: catch-all `*` → `deps` → lock file maintenance → `chore` → major (no type of its own; inherits `deps`) → github-actions + `.github/workflows/**` → `ci` → security `fix` (forced, so a CVE in an action still releases as a Bug Fix).
+Rule precedence (last match wins) is: catch-all `*` → `deps` → lock file maintenance → `chore` → major (no type of its own; inherits `deps`) → github-actions + `.github/workflows/**` → `ci` → (`mcp.json`) dev-only → `chore` → security `fix` (forced, so a CVE in an action or a dev dep still releases as a Bug Fix).
+
+**Dev-only updates in libraries (`mcp.json`).** A library's consumers install its `dependencies`, never its `devDependencies`. Under the `deps:` baseline, though, every lefthook or `@types/node` bump cut a patch release anyway: 8 of the 9 Dependencies entries in owine/unifi-protect-mcp 2.15.0 were dev-only or toolchain, and each one was a no-op release for every `@latest` consumer. `mcp.json` types them `chore:`. It is scoped to that preset on purpose. An app's dev tooling still produces a deployable artifact, so apps keep the `deps:` baseline and their single bundle. The toolchain group is split by what consumers can see:
+- `packageManager` and `.nvmrc` are `chore:`. Corepack honors `packageManager` only in this repo's own root, never in a consumer's install.
+- `engines` is consumer-visible, so it is never typed `chore:`. `mcp.json` disables every `engines` entry (the fleet's `pin` would otherwise narrow the range to one version). That also keeps an engines bump from ever sharing the `chore:` toolchain branch.
+- A Dockerfile `FROM node` would be consumer-visible too. No MCP repo builds an image today; if one starts, split the image out of `toolchain-versions` first.
 
 CI plumbing is hidden because it isn't observable to anyone consuming the published image, package or server — an `actions/checkout` bump shouldn't move a version number. That covers both the `github-actions` manager (`.github/workflows`, `.github/actions`, `workflow-templates/`, any `action.yml`) and the workflow version literals the custom regex manager extracts; the latter is matched by *path*, not by `matchManagers: ["custom.regex"]`, so a consumer repo's own custom managers aren't silenced along with it.
 
-**A branch gets one commit type, and `ci` beats `deps`.** Renovate types a grouped branch by the highest-priority type among its upgrades, from the fixed list `chore` < `ci` < `build` < `fix` < `feat`. `deps` isn't on that list, so one `ci:` upgrade turns the whole branch `ci:`, and every runtime bump on it ships without a release. That is how owine/unifi-protect-mcp #284 released `ws` 8.22.0 with no changelog entry. `automerge.json` therefore puts CI plumbing on its own `all non-major ci dependencies` branch, using exactly the matchers `default.json` uses to type `ci:`. `test/commit-types.mjs` fails if the two drift, or if any group carries two types. Known exceptions it allows: `pins` (a pin changes no resolved version, so the type doesn't matter), and `toolchain-versions` / `python runtime`. Those two would only mix if a repo pinned node/pnpm/python as a setup-action **input** (`node-version: 24.21.0`) while also shipping it via `.nvmrc`/`packageManager`/Dockerfile. Use `node-version-file` instead.
+**A branch gets one commit type, and any hidden type beats `deps`.** Renovate types a grouped branch by the highest-priority type among its upgrades, from the fixed list `chore` < `ci` < `build` < `fix` < `feat`. `deps` isn't on that list, so one `ci:` **or `chore:`** upgrade retypes the whole branch, and every runtime bump on it ships without a release. That is how owine/unifi-protect-mcp #284 released `ws` 8.22.0 with no changelog entry. Every hidden type therefore gets its own branch, grouped with exactly the matchers that assign the type:
+- `automerge.json` puts CI plumbing on `all non-major ci dependencies`, mirroring `default.json`'s `ci:` rules.
+- `mcp.json` puts non-major `devDependencies` on `all non-major dev dependencies`, mirroring its own `chore:` rule and taking `automerge.json`'s bundle update types.
+
+`test/commit-types.mjs` runs an app consumer and an MCP consumer through the real rule chain. It fails if either pair drifts, if a runtime and a dev bump in the same week share a branch, if a vulnerable dev dep stops releasing as `fix:`, or if any group carries two types. Known exceptions it allows: `pins` (a pin changes no resolved version, so the type doesn't matter), and `toolchain-versions` / `python runtime`. Those two would only mix if a repo pinned node/pnpm/python as a setup-action **input** (`node-version: 24.21.0`) while also shipping it via `.nvmrc`/`packageManager`/Dockerfile. Use `node-version-file` instead.
 
 ## Supply-chain posture
 
@@ -390,3 +400,27 @@ CI plumbing is hidden because it isn't observable to anyone consuming the publis
   bump is handled by the baseline major rule (7-day soak, `automerge: false`,
   `needs-review`). Rare in practice — `apk` versioning seldom classifies an apk
   bump as major.
+
+- **pnpm repos that publish: set a trust policy in `pnpm-workspace.yaml`.**
+
+  ```yaml
+  trustPolicy: no-downgrade
+  trustPolicyIgnoreAfter: 525600   # minutes = 365 days
+  ```
+
+  Lock file maintenance automerges (4x/week, `minimumReleaseAge: 0 days`), and
+  what it moves is **transitive** versions. Renovate's soak covers only the
+  direct deps it proposes, so for transitive versions nothing on the Renovate
+  side checks provenance. With `no-downgrade`, `pnpm install` fails when a
+  package's trust evidence drops below what its earlier releases had (e.g. a
+  trusted-publisher package suddenly published from a plain token), which is
+  the signature of a hijacked maintainer account. CI then fails and the lock
+  file PR stops automerging until a human looks. `trustPolicyIgnoreAfter`
+  exempts releases older than a year, which mostly predate provenance; without
+  it, old transitive versions fail the check for having no evidence at all.
+  Needs pnpm ≥ 10.27 (`trustPolicy` itself is 10.21). If one known-good
+  release trips it, add it to `trustPolicyExclude` instead of loosening the
+  policy. Leave `lockFileMaintenance`'s automerge and schedule as they are;
+  the trust policy is the check, not a slower cadence. And don't add a pnpm-side
+  `minimumReleaseAge` for the same purpose: the soak lives in Renovate, and a
+  second one in pnpm strands lockfiles.
