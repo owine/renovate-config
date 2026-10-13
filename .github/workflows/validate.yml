@@ -40,6 +40,13 @@ jobs:
       - name: Test python runtime behavior
         run: node test/python-runtime.mjs
 
+      # A branch takes ONE commit type and `ci` outranks `deps`, so a group
+      # that mixes the two silently drops releases (unifi-protect-mcp #284).
+      # Asserts automerge.json's CI group mirrors default.json's `ci:` rules
+      # and that no group carries two types.
+      - name: Test commit-type grouping
+        run: node test/commit-types.mjs
+
       - name: Validate Renovate presets
         run: |
           renovate-config-validator --strict \

@@ -3,9 +3,25 @@
   "description": "Grouped automerge for all non-major updates. Extend AFTER default.json. Skip in repos that need stricter review.",
   "packageRules": [
     {
-      "description": "Bundle every non-major update into a single weekly PR and automerge once CI passes. Do NOT add lockFileMaintenance here: it is repo-wide (no package/datasource), so this groupName would concatenate onto its title ('lock file maintenance all non-major dependencies') and force it onto this shared weekly branch despite its own mon/wed/fri/sun schedule. It already automerges standalone via default.json's lockFileMaintenance block. `pin` and `pinDigest` are NO LONGER HERE — they moved to the `pins` rule below so they can run off-schedule; see that rule. `digest` stays, because a digest REFRESH is a content change, not a pin.",
+      "description": "Bundle every non-major update into a single weekly PR and automerge once CI passes. Do NOT add lockFileMaintenance here: it is repo-wide (no package/datasource), so this groupName would concatenate onto its title ('lock file maintenance all non-major dependencies') and force it onto this shared weekly branch despite its own mon/wed/fri/sun schedule. It already automerges standalone via default.json's lockFileMaintenance block. `pin` and `pinDigest` are NO LONGER HERE — they moved to the `pins` rule below so they can run off-schedule; see that rule. `digest` stays, because a digest REFRESH is a content change, not a pin. Despite the name, CI plumbing is ALSO no longer here: the two rules below move it onto `all non-major ci dependencies` so this branch carries only `deps:`-typed updates; see them.",
       "matchUpdateTypes": ["patch", "minor", "digest"],
       "groupName": "all non-major dependencies",
+      "automerge": true,
+      "automergeType": "pr"
+    },
+    {
+      "description": "CI plumbing gets its OWN weekly branch, so a `ci:`-typed update never shares a branch with a `deps:`-typed one. A groupName is a branch name and a branch gets ONE commit message, and Renovate picks that message's type as the highest-priority type among the branch's upgrades from its fixed list `[chore, ci, build, fix, feat]` (`generateBranchConfig`). `deps` is NOT IN THAT LIST, so one `ci:` upgrade on a branch makes the whole branch `ci:`. It is not a tie that could break either way: `deps:` loses every time. Before this split the bundle above swept Actions and npm onto one branch, and every week that an Actions update happened to be pending, the runtime bumps sharing the branch lost their release. Observed on owine/unifi-protect-mcp #284 (2026-10-05): `ci: update all non-major dependencies` touched `.github/workflows/ci.yml` AND `package.json`, bumping the production dependency `ws` to 8.22.0. release-please treats `ci:` as hidden, so 2.15.0 shipped that bump with no CHANGELOG entry. Weeks without a pending Action (#265, #251, #234, #183, #169) came out `deps:`, which is why it looked intermittent. The reverse mix would be wrong too, since releasing on Actions-only churn is what `ci:` exists to prevent, so the fix is two branches, not a different winner. INVARIANT: this rule and its twin below must match EXACTLY what default.json types `ci:`, which is `matchManagers: ['github-actions']` OR `matchFileNames: ['.github/workflows/**']`. packageRules AND their match fields, so the OR has to be two rules sharing one groupName. If these drift from default.json, a `ci:` dep falls back into the bundle above and silently takes its npm neighbours' release with it. test/commit-types.mjs fails on any drift. matchUpdateTypes mirrors the bundle above (patch/minor/digest) and deliberately leaves out pin/pinDigest so those stay on the `pins` branch below. docker.json's `github-actions-*` groups are extended later and win the groupName for their families, which is safe because they are `matchManagers: ['github-actions']` only, so every upgrade on them is `ci:` too.",
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["patch", "minor", "digest"],
+      "groupName": "all non-major ci dependencies",
+      "automerge": true,
+      "automergeType": "pr"
+    },
+    {
+      "description": "Second half of the `all non-major ci dependencies` split above: the workflow version literals and runner labels that default.json's customManagers extract inside `.github/workflows/`. Those deps belong to `custom.regex`, not `github-actions`, so the rule above can't reach them. default.json types them `ci:` by PATH, and this matches them by the same path for the same reason (and, like default.json, not by `matchManagers: ['custom.regex']`, which would also catch a consumer's own unrelated custom managers). Keep both halves in lockstep with default.json; see the invariant above.",
+      "matchFileNames": [".github/workflows/**"],
+      "matchUpdateTypes": ["patch", "minor", "digest"],
+      "groupName": "all non-major ci dependencies",
       "automerge": true,
       "automergeType": "pr"
     },
