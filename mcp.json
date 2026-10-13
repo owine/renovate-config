@@ -1,6 +1,6 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "description": "MCP server repos. Isolate the MCP SDK for manual review and keep engines.node unpinned so library consumers keep a broad range. Extend AFTER node.json.",
+  "description": "MCP server repos — npm-published LIBRARIES. Isolate the MCP SDK for manual review, keep `engines` unpinned so library consumers keep a broad range, and stop dev-only updates from cutting releases. Extend AFTER node.json (and after automerge.json).",
   "packageRules": [
     {
       "description": "MCP SDK — review every bump manually. Carved out of the non-major automerge bundle so a human reads the SDK changelog before it lands: this server re-exposes SDK capability, and a minor bump can change what clients see. The review gate is the whole point; the commit type is the fleet baseline `deps:` (patch, Dependencies section). It was `feat:` (minor release) until the fleet stopped generating `feat:` for dependency updates entirely — see default.json's major rule. If a consumer-facing SDK bump warrants a minor release, say so in a hand-written commit rather than teaching Renovate to claim features it didn't write.",
@@ -10,11 +10,34 @@
       "addLabels": ["needs-review"]
     },
     {
-      "description": "Don't pin engines.node — this is a library and the engines range must stay broad for consumers. Overrides the node preset's default pin behavior.",
+      "description": "Don't touch ANY `engines` entry — this is a library and every engines range must stay broad for consumers. The fleet's `rangeStrategy: pin` would rewrite `^22.13.0 || ^24.0.0` to one exact version and lock out every consumer on another. This used to cover only `engines.node`. It now covers the whole depType (pnpm, npm, yarn too) for that same reason, and for a second one: `engines` is the ONE consumer-visible member of node.json's `toolchain-versions` group, whose other members (`packageManager`, `.nvmrc`) are typed `chore:` below. Left enabled, an engines bump would share that branch, and a branch takes its highest-ranked type, so it would be committed as `chore:` and ship with no release. Engines ranges in a library are hand-maintained.",
       "matchManagers": ["npm"],
       "matchDepTypes": ["engines"],
-      "matchPackageNames": ["node"],
       "enabled": false
+    },
+    {
+      "description": "Dev-only updates commit as `chore:`, release-please's HIDDEN, non-releasing type. This preset is for npm-published libraries, and a library's consumers install its `dependencies` and never its `devDependencies`, so a lefthook or @types/node bump changes nothing they receive. Under the `deps:` baseline every such bump still cut a patch release: owine/unifi-protect-mcp 2.15.0 had 9 Dependencies entries, and 8 were dev-only or toolchain (@types/node, lefthook, typescript-eslint, pnpm x5). That is a no-op release pushed to every `@latest` consumer. Runtime `dependencies` stay `deps:`. Applies to majors too, since a dev major is still invisible downstream. Security fixes still release: `vulnerabilityAlerts` is appended as the LAST packageRule with `force: { semanticCommitType: fix, groupName: 'security updates' }`, and force is re-applied after every merge, so a vulnerable dev dep commits `fix:` on the security branch. THIS RULE IS HALF THE CHANGE: see the group rule below, without which this one would re-create owine/unifi-protect-mcp #284.",
+      "matchManagers": ["npm"],
+      "matchDepTypes": ["devDependencies"],
+      "semanticCommitType": "chore"
+    },
+    {
+      "description": "Non-major dev-only updates get their OWN branch, carved out of automerge.json's `all non-major dependencies` bundle. A groupName is a branch name and a branch takes ONE commit type, the highest-ranked of Renovate's `[chore, ci, build, fix, feat]`. `deps` is not ranked, so one `chore:` dev bump on the shared bundle would retype the whole branch `chore:` and hide every runtime bump on it, which is the #284 `ws` failure again in a new form. Mirrors automerge.json's `all non-major ci dependencies` split. INVARIANT: matchers identical to the `chore:` rule above, and matchUpdateTypes identical to automerge.json's bundle (patch/minor/digest, NO pin/pinDigest, which stay on `pins`). test/commit-types.mjs fails on drift. Lives HERE rather than in automerge.json, so apps that do not extend this preset keep one bundle and get no extra weekly PR. Extended after node.json, it also takes non-major dev bumps OUT of node.json's ecosystem groups (`testing`, `eslint`, `eslint plugins`, `typescript`, …). That is deliberate. A coupled set that is all-dev stays together on this one branch. A set that spans both kinds (`pg` + `@types/pg`, `react` + `@types/react`) can't make a non-major branch mixed. Majors keep their ecosystem groups. Sets NO `automerge`: it inherits automerge.json's, so this preset never turns automerge on by itself.",
+      "matchManagers": ["npm"],
+      "matchDepTypes": ["devDependencies"],
+      "matchUpdateTypes": ["patch", "minor", "digest"],
+      "groupName": "all non-major dev dependencies"
+    },
+    {
+      "description": "Toolchain pins a library's consumers never see commit as `chore:`: `packageManager` (Corepack honors it only in this repo's own root, never in a consumer's install) and `.nvmrc`/`.node-version` (contributors' and CI's Node). These were 5 of the 8 no-op entries in unifi-protect-mcp 2.15.0. They stay in node.json's `toolchain-versions` group, whose lockstep is untouched. That group stays single-typed in an MCP library because its consumer-visible members are out of play: `engines` is disabled above, and no MCP repo builds a Docker image (verified 2026-10-13 for unifi-protect-mcp and unifi-network-mcp). An MCP repo that adds a Dockerfile `FROM node:X` would put a releasing `deps:` bump on this `chore:` branch, and the image's Node bump would ship unreleased. test/commit-types.mjs records that as a known latent case; split the image out before adding one.",
+      "matchManagers": ["npm"],
+      "matchDepTypes": ["packageManager"],
+      "semanticCommitType": "chore"
+    },
+    {
+      "description": "Same `chore:` treatment for the version files, which belong to their own managers rather than npm. See the rule above.",
+      "matchManagers": ["nvm", "nodenv"],
+      "semanticCommitType": "chore"
     }
   ]
 }
