@@ -201,7 +201,11 @@ const consumers = [
       // Runtime groups: fed by both shipping manifests and workflow inputs. See knownMixed.
       { why: 'packageManager pnpm', u: npmDep('pnpm', 'packageManager', 'patch'), group: 'toolchain-versions', type: 'deps' },
       { why: '.nvmrc node', u: { manager: 'nvm', depName: 'node', datasource: 'node-version', packageFile: '.nvmrc', updateType: 'patch' }, group: 'toolchain-versions', type: 'deps' },
-      { why: 'setup-node `node-version:` literal (uses-with)', u: { manager: 'github-actions', depName: 'node', datasource: 'github-releases', depType: 'uses-with', packageFile: WF, updateType: 'patch' }, group: 'toolchain-versions', type: 'ci' },
+      // Workflow Node literals are tracked by their `# renovate: … depName=node-lts-NN packageName=node`
+      // annotation (path-typed ci:). setup-node's NATIVE input dep is a duplicate of
+      // the same span with no lane cap, so node.json disables it (claude-terminal-home-assistant #432/#433).
+      { why: 'annotated workflow Node lane (custom.regex node-lts-24)', u: { manager: 'regex', depName: 'node-lts-24', packageName: 'node', datasource: 'node-version', packageFile: WF, updateType: 'minor' }, group: 'toolchain-versions', type: 'ci' },
+      { why: 'setup-node `node-version:` NATIVE dep (real packageName actions/node-versions): disabled duplicate', u: { manager: 'github-actions', depName: 'node', packageName: 'actions/node-versions', datasource: 'github-releases', depType: 'uses-with', packageFile: WF, updateType: 'patch' }, enabled: false },
       { why: 'FROM python', u: { manager: 'dockerfile', depName: 'python', datasource: 'docker', packageFile: 'Dockerfile', updateType: 'patch' }, group: 'python runtime', type: 'deps' },
       // python runtime is typed `deps:` by python.json, so its workflow members
       // cannot retype a CPython bump of the shipped image `ci:`.
@@ -215,7 +219,7 @@ const consumers = [
     knownMixed: {
       pins: 'pin/pinDigest change no resolved version, so it does not matter that a mixed branch comes out `ci:` and does not release. Kept as one branch by design (automerge.json `pins`).',
       'toolchain-versions':
-        'LATENT: only when a repo pins node/pnpm as a setup-node/pnpm action INPUT while also shipping it via .nvmrc/packageManager/Dockerfile. No preset consumer has that shape as of 2026-10-13. Splitting the group re-opens the runtime co-bump deadlock, so it is left open on purpose.',
+        'LATENT: only when an app annotates a workflow Node literal (`# renovate: … depName=node-lts-NN packageName=node`, path-typed ci:) while also shipping Node via .nvmrc/packageManager/Dockerfile; the ci: lane would hide the runtime release. No app has that shape (2026-10-19: the only annotated setup-node lines are in claude-terminal-home-assistant, which ships no Node manifest). NOT fixed by typing the group deps: the way python.json does, because an independent lane (node-lts-22 next to a 24 .nvmrc) bumps alone and would then release on CI churn. Splitting the group re-opens the runtime co-bump deadlock, so it is left open on purpose.',
     },
   },
   {
@@ -247,6 +251,7 @@ const consumers = [
       { why: 'engines.node is consumer-visible: disabled, never typed', u: npmDep('node', 'engines', 'minor', { datasource: 'node-version' }), enabled: false },
       { why: 'engines.pnpm is consumer-visible: disabled, never typed', u: npmDep('pnpm', 'engines', 'minor'), enabled: false },
       { why: 'LATENT: Dockerfile `FROM node` (no MCP repo has one)', u: { manager: 'dockerfile', depName: 'node', datasource: 'docker', packageFile: 'Dockerfile', updateType: 'patch' }, group: 'toolchain-versions', type: 'deps' },
+      { why: 'annotated CI matrix Node lane (unifi-*-mcp ci.yml)', u: { manager: 'regex', depName: 'node-lts-22', packageName: 'node', datasource: 'node-version', packageFile: WF, updateType: 'minor' }, group: 'toolchain-versions', type: 'ci' },
 
       // Security still releases, dev or not.
       { why: 'vulnerable DEV dep still releases as fix', u: npmDep('lefthook', 'devDependencies', 'patch', { currentVersion: '2.2.1' }), vuln: true, group: SECURITY, type: 'fix' },
@@ -261,7 +266,7 @@ const consumers = [
     knownMixed: {
       pins: 'Same as for apps (pins change no resolved version); dev pins add `chore:` to the mix, which is equally harmless.',
       'toolchain-versions':
-        'LATENT: only if an MCP repo builds a Docker image, whose `FROM node` is releasing `deps:` and would ship hidden on this `chore:` branch. Neither unifi-protect-mcp nor unifi-network-mcp has a Dockerfile (2026-10-13). Split the image out of the group before adding one.',
+        'LIVE but harmless: the annotated CI matrix lanes (ci:) share the branch with .nvmrc/packageManager (chore:), so it comes out `ci: update toolchain-versions` (unifi-protect-mcp #323, unifi-network-mcp #303); both types are hidden and every member is dev-only in a library. LATENT and harmful: a Dockerfile `FROM node` would add a releasing `deps:` that ships hidden. Neither unifi-protect-mcp nor unifi-network-mcp has a Dockerfile (2026-10-13). Split the image out of the group before adding one.',
     },
   },
 ];

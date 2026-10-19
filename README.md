@@ -98,7 +98,7 @@ CI plumbing is hidden because it isn't observable to anyone consuming the publis
 - `automerge.json` puts CI plumbing on `all non-major ci dependencies`, mirroring `default.json`'s `ci:` rules.
 - `mcp.json` puts non-major `devDependencies` on `all non-major dev dependencies`, mirroring its own `chore:` rule and taking `automerge.json`'s bundle update types.
 
-`test/commit-types.mjs` runs an app consumer and an MCP consumer through the real rule chain. It fails if either pair drifts, if a runtime and a dev bump in the same week share a branch, if a vulnerable dev dep stops releasing as `fix:`, or if any group carries two types. Known exceptions it allows: `pins` (a pin changes no resolved version, so the type doesn't matter), and `toolchain-versions`, which would only mix if a repo pinned node/pnpm as a setup-action **input** (`node-version: 24.21.0`) while also shipping it via `.nvmrc`/`packageManager`/Dockerfile. Use `node-version-file` instead. `python runtime` is **not** an exception: it has workflow members (`uv python install X.Y`, setup-python's `python-version:`), so `python.json` types the whole group `deps:`, or one CI line would ship a CPython bump of the image as a hidden `ci:`. The price is that a branch of *only* workflow lines (a one-time catch-up of stale lines) also releases.
+`test/commit-types.mjs` runs an app consumer and an MCP consumer through the real rule chain. It fails if either pair drifts, if a runtime and a dev bump in the same week share a branch, if a vulnerable dev dep stops releasing as `fix:`, or if any group carries two types. Known exceptions it allows: `pins` (a pin changes no resolved version, so the type doesn't matter), and `toolchain-versions`. In the MCP libraries it already mixes `ci:` (annotated CI matrix lanes) with `chore:` (`.nvmrc`/`packageManager`), which is harmless because both are hidden. In an app it would only mix if a workflow Node literal is annotated (`# renovate: … depName=node-lts-NN packageName=node`) while the app also ships Node via `.nvmrc`/`packageManager`/Dockerfile. Use `node-version-file` there instead. `python runtime` is **not** an exception: it has workflow members (`uv python install X.Y`, setup-python's `python-version:`), so `python.json` types the whole group `deps:`, or one CI line would ship a CPython bump of the image as a hidden `ci:`. The price is that a branch of *only* workflow lines (a one-time catch-up of stale lines) also releases.
 
 ## Supply-chain posture
 
@@ -411,6 +411,17 @@ CI plumbing is hidden because it isn't observable to anyone consuming the publis
   treatment: `automerge: false`, a 7-day soak, and `breaking`/`needs-review`.
   Patches keep automerging. Before this, owine/trip-tracker #316 (3.14.8 →
   3.15.0) automerged with nobody looking.
+
+- **setup-node version literals: annotate them, or use `node-version-file`.**
+  Renovate's github-actions manager natively extracts `actions/setup-node`'s
+  `node-version:` input (packageName `actions/node-versions`), and `node.json`
+  **disables** that dep. Every setup-node literal in the fleet is annotated
+  (`'24.22.0' # renovate: datasource=node-version depName=node-lts-24
+  packageName=node`), so the native dep was a lane-blind duplicate of the same
+  span. It went to a different branch: claude-terminal-home-assistant #432 and
+  #433 bumped the same three lines. On the next LTS line it would also have
+  ignored `node-lts-24`'s `<25` cap. An **unannotated** literal is now
+  untracked, so annotate it.
 
 - **`python runtime` consumer checklist.** What the preset can't enforce:
 
