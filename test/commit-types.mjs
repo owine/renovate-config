@@ -206,6 +206,7 @@ const consumers = [
       // the same span with no lane cap, so node.json disables it (claude-terminal-home-assistant #432/#433).
       { why: 'annotated workflow Node lane (custom.regex node-lts-24)', u: { manager: 'regex', depName: 'node-lts-24', packageName: 'node', datasource: 'node-version', packageFile: WF, updateType: 'minor' }, group: 'toolchain-versions', type: 'ci' },
       { why: 'setup-node `node-version:` NATIVE dep (real packageName actions/node-versions): disabled duplicate', u: { manager: 'github-actions', depName: 'node', packageName: 'actions/node-versions', datasource: 'github-releases', depType: 'uses-with', packageFile: WF, updateType: 'patch' }, enabled: false },
+      { why: 'setup-node NATIVE dep in a composite action stays ON: the annotation manager does not scan .github/actions, so it is the only tracker there', u: { manager: 'github-actions', depName: 'node', packageName: 'actions/node-versions', datasource: 'github-releases', depType: 'uses-with', packageFile: '.github/actions/setup/action.yml', updateType: 'patch' }, group: CI_GROUP, type: 'ci' },
       { why: 'FROM python', u: { manager: 'dockerfile', depName: 'python', datasource: 'docker', packageFile: 'Dockerfile', updateType: 'patch' }, group: 'python runtime', type: 'deps' },
       // python runtime is typed `deps:` by python.json, so its workflow members
       // cannot retype a CPython bump of the shipped image `ci:`.

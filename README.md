@@ -420,8 +420,10 @@ CI plumbing is hidden because it isn't observable to anyone consuming the publis
   packageName=node`), so the native dep was a lane-blind duplicate of the same
   span. It went to a different branch: claude-terminal-home-assistant #432 and
   #433 bumped the same three lines. On the next LTS line it would also have
-  ignored `node-lts-24`'s `<25` cap. An **unannotated** literal is now
-  untracked, so annotate it.
+  ignored `node-lts-24`'s `<25` cap. The rule only applies under
+  `.github/workflows/`, where the annotation manager runs: in a composite
+  `action.yml` the native dep is the only tracker and stays on. An
+  **unannotated** workflow literal is now untracked, so annotate it.
 
 - **`python runtime` consumer checklist.** What the preset can't enforce:
 
