@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// Behavior tests for default.json's two customManagers.
+// Behavior tests for default.json's two customManagers and python.json's
+// `uv python install` manager.
 //
 // WHY THIS EXISTS: CI's other gate, `renovate-config-validator --strict`, is a
 // SCHEMA check. It cannot tell a working regex from a broken one — every
@@ -64,18 +65,19 @@ process.on('exit', () => rmSync(workspace, { recursive: true, force: true }));
 // customManagers array is a legitimate edit, but it must not silently retarget
 // these tests at the wrong manager.
 // ---------------------------------------------------------------------------
-const { customManagers } = JSON.parse(readFileSync(join(HERE, '..', 'default.json'), 'utf8'));
+const customManagersOf = (file) => JSON.parse(readFileSync(join(HERE, '..', file), 'utf8')).customManagers ?? [];
 
 const managers = {
-  annotation: { index: 0, marker: 'Bump version literals in GitHub Actions workflows' },
-  runners: { index: 1, marker: 'Make runner labels visible where they are NOT a literal' },
+  annotation: { file: 'default.json', index: 0, marker: 'Bump version literals in GitHub Actions workflows' },
+  runners: { file: 'default.json', index: 1, marker: 'Make runner labels visible where they are NOT a literal' },
+  uvPython: { file: 'python.json', index: 0, marker: 'Track `uv python install' },
 };
 
 for (const [name, m] of Object.entries(managers)) {
-  const cm = customManagers[m.index];
+  const cm = customManagersOf(m.file)[m.index];
   if (!cm?.description?.includes(m.marker)) {
     console.error(
-      `\ncustomManagers[${m.index}] is not the '${name}' manager any more.\n` +
+      `\n${m.file} customManagers[${m.index}] is not the '${name}' manager any more.\n` +
         `  expected its description to contain: ${m.marker}\n` +
         `  got: ${cm?.description?.slice(0, 80) ?? '(missing)'}…\n\n` +
         `If you reordered the array on purpose, update the index in this file.\n`,
@@ -99,6 +101,7 @@ const NODE = (depName, currentValue) => ({
   datasource: 'node-version',
 });
 const RUNNER = (depName, currentValue) => ({ depName, currentValue, datasource: 'github-runners' });
+const PYTHON = (currentValue) => ({ depName: 'python', currentValue, datasource: 'python-version', versioning: 'npm' });
 
 const cases = [
   {
@@ -176,6 +179,27 @@ const cases = [
     ],
     replace: { depName: 'macos', newValue: '16-large', from: 'runner: macos-15-large', to: 'runner: macos-16-large' },
   },
+  {
+    manager: 'uvPython',
+    fixture: 'uv-python-install.yml',
+    why: 'one bare X.Y or X.Y.Z is tracked; lists, 3.14t, rc, cpython@, matrix and specifiers are not',
+    expect: [PYTHON('3.14'), PYTHON('3.14.8'), PYTHON('3.13'), PYTHON('3.12')],
+    replace: { depIndex: 0, newValue: '3.15', from: 'run: uv python install 3.14', to: 'run: uv python install 3.15' },
+  },
+  {
+    manager: 'uvPython',
+    fixture: 'uv-python-install.yml',
+    why: 'a quoted triple is rewritten as a triple, inside its quotes',
+    expect: [PYTHON('3.14'), PYTHON('3.14.8'), PYTHON('3.13'), PYTHON('3.12')],
+    replace: { depIndex: 1, newValue: '3.15.0', from: 'install "3.14.8"', to: 'install "3.15.0"' },
+  },
+  {
+    manager: 'uvPython',
+    fixture: 'uv-python-install.yml',
+    why: 'a chained `&& uv sync` survives the rewrite (the terminator is consumed, not lost)',
+    expect: [PYTHON('3.14'), PYTHON('3.14.8'), PYTHON('3.13'), PYTHON('3.12')],
+    replace: { depIndex: 2, newValue: '3.15', from: 'install --default 3.13 && uv sync', to: 'install --default 3.15 && uv sync' },
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -210,7 +234,7 @@ for (const c of cases) {
     continue;
   }
 
-  const depIndex = deps.findIndex((d) => d.depName === c.replace.depName);
+  const depIndex = c.replace.depIndex ?? deps.findIndex((d) => d.depName === c.replace.depName);
   const target = join(workspace, PACKAGE_FILE);
   mkdirSync(dirname(target), { recursive: true });
   writeFileSync(target, content);
@@ -279,4 +303,4 @@ if (failures.length) {
   );
   process.exit(1);
 }
-console.log(`\n${cases.length + 2} checks passed against Renovate at ${DIST}`);
+console.log(`\n${cases.length + Object.keys(managers).length} checks passed against Renovate at ${DIST}`);
