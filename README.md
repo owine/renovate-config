@@ -30,7 +30,7 @@ Only extend the ecosystem presets a repo actually uses. Extend `:mcp` *after* `:
 | `default.json` | Baseline. Pinned ranges, 3-day soak, OSV alerts, GH Action digests, lockfile maintenance, pre-commit hook updates, weekly schedule (Mondays, `America/Chicago`). Majors separated into their own PRs and held for manual review. `rebaseWhen: auto` — Renovate rebases stale PRs only when safe (no manual edits, no conflicts); use the PR checkbox to force a rebase otherwise. Two `customManagers` for `.github/workflows/*.yml`: `# renovate: datasource=X depName=Y` annotations, and **non-literal runner labels** (`matrix.include[].runner`, `workflow_call` input defaults, JSON-in-`run:`) — see Consumer notes. |
 | `automerge.json` | Group all non-major updates into one weekly PR, automerge once CI passes. CI plumbing (Actions + `.github/workflows` literals) gets a **second** weekly PR, `all non-major ci dependencies`, so a `ci:` bump can't take a runtime bump's release with it (see Commit types). `pin`/`pinDigest` are split onto a separate `pins` PR so they can run at any time — a `groupName` is a branch name and a branch gets one schedule, so bundling them would have pinned them to Monday. Skip if you want hand-review of every patch. |
 | `node.json` | Node/TS ecosystem groupings (most are peer-dep/lockstep coupled; a few are explicitly churn reduction — each rule says which): React, TanStack, Radix (the unified `radix-ui` package **and** the legacy `@radix-ui/*` primitives, for migration coherence), Vite, Tailwind (`tailwindcss` + `@tailwindcss/*` only — **not** the third-party `tailwind-merge`/`tw-animate-css`), Vitest (the whole `@vitest/*` scope, incl. `@vitest/ui`) + testcontainers, Testing Library (the `@testing-library/react` + `@testing-library/dom` peer pair only), ESLint plugins, ESLint core (`eslint` + `@eslint/js`, deliberately a **separate** group from the plugins), Prisma, Auth.js, pg, Hono, Preact, Cloudflare Workers (wrangler/@cloudflare/miniflare, plus the npm `cf` CLI, which is coupled to wrangler via its generated `wrangler.config.ts` and scoped to npm because PyPI and mise also use the name `cf`), toolchain (node+pnpm). Plus Next.js (incl. `eslint-config-next`, which must stay ordered after `eslint plugins`), Playwright (**npm-scoped via `matchDatasources`** so it never reaches the PyPI package of the same name), react-hook-form, stylelint, tesseract.js, Sentry (the `getsentry/sentry-javascript` SDK monorepo **only**, matched by `matchSourceUrls` because the `@sentry/*` scope spans several release trains. The bundler plugins and `@sentry/cli` stay ungrouped). A trailing **pre-seeded** block covers ecosystems no repo uses yet (storybook, OpenTelemetry, AWS SDK, tRPC, drizzle, NestJS, Babel, SWC, jest, astro, nuxt, SvelteKit, expo, apollo, clerk, supabase) so the first adopter is grouped on day one. The AWS/OTel group names are ecosystem-suffixed (`aws-sdk-js`, `opentelemetry-js`) because a groupName is a branch name — sharing one with `python.json` would merge both ecosystems into a single cross-manager PR. |
-| `python.json` | pep621 ecosystem groupings (mostly peer-dep/hard-pinned; `scientific-python` is churn reduction): FastAPI stack, Pydantic, SQLAlchemy stack, pytest, lint/types tooling, boto3+botocore (hard pin), PyTorch trio, LangChain, OpenTelemetry, Celery (`vine` is also an npm name — the `matchManagers` scope is load-bearing), plus pre-seeded Django, Hugging Face, and numpy/scipy/pandas. `sentry-sdk` is deliberately **not** grouped: it's a single package whose integration extras set only version floors (see the file's top-level description). Plus a `python runtime` group binding an exact-pinned `requires-python` (native pep621 manager, so Renovate regenerates `uv.lock` itself) to the `python` Docker base image. Every other `requires-python` shape (`>=3.10`, `~=3.14`, `==3.14.*`) is metadata and stays untracked. See Consumer notes. |
+| `python.json` | pep621 ecosystem groupings (mostly peer-dep/hard-pinned; `scientific-python` is churn reduction): FastAPI stack, Pydantic, SQLAlchemy stack, pytest, lint/types tooling, boto3+botocore (hard pin), PyTorch trio, LangChain, OpenTelemetry, Celery (`vine` is also an npm name — the `matchManagers` scope is load-bearing), plus pre-seeded Django, Hugging Face, and numpy/scipy/pandas. `sentry-sdk` is deliberately **not** grouped: it's a single package whose integration extras set only version floors (see the file's top-level description). Plus a `python runtime` group binding an exact-pinned `requires-python` (native pep621 manager, so Renovate regenerates `uv.lock` itself) to the `python` Docker base image, `.python-version`, and the CPython version a workflow passes to `uv python install` or `actions/setup-python`. CPython **minors** (`3.14` → `3.15`) are reviewed like majors; patches automerge. Every other `requires-python` shape (`>=3.10`, `~=3.14`, `==3.14.*`) is metadata and stays untracked. See Consumer notes. |
 | `docker.json` | Dockerfile base bundling, GH Actions setup/artifact/docker families, runtime-major flags. The `dockerfile bases` group **excludes the language-runtime images** (`node`/`pnpm`/`python`, both bare and `docker.io/library/…` spellings) so they stay with their own runtime groups — see Consumer notes. |
 | `mcp.json` | MCP server repos, i.e. **npm-published libraries**: isolate `@modelcontextprotocol/sdk` for manual review (no automerge); leave every `engines` range alone so library consumers keep a broad one; and commit **dev-only** updates (`devDependencies`, `packageManager`, `.nvmrc`) as `chore:`, so they stop cutting no-op patch releases. Non-major `devDependencies` get their own `all non-major dev dependencies` PR (automerge inherited from `automerge.json`), keeping `chore:` off the `deps:` bundle. Runtime `dependencies` and security fixes still release. See Commit types. Extend after `node.json`. |
 | `alpine.json` | Alpine updates. apk pins (**built-in `apk` datasource**, extracted from `RUN apk add` by the dockerfile manager since Renovate 44.96.0): one `alpine packages` group, 0-day soak, runs any time, **automerges every non-major bump (patch/pin/digest/minor) together**, and forces `rangeStrategy: replace` (without it every drifted pin goes silently dark). Gates **`node:*-alpine` image bumps** (minor/patch) to manual review. Also gates **alpine base-image (`docker`) minor bumps** to manual review (the base-image patch line automerges). Carved out of `automerge.json`'s bundle **and** of `docker.json`'s `dockerfile bases` group — extend after both. **Requires a consumer-side `registryUrls`** naming the Alpine release line (see Consumer notes). |
@@ -39,7 +39,8 @@ Only extend the ecosystem presets a repo actually uses. Extend `:mcp` *after* `:
 ## Tests
 
 `test/custom-managers.mjs` is a behavior gate for `default.json`'s two
-`customManagers`, run by CI before the validator. It matters because
+`customManagers` and `python.json`'s `uv python install` manager, run by CI
+before the validator. It matters because
 `renovate-config-validator --strict` is a **schema** check: every regex bug this
 repo has shipped — the phantom dep of #108, the cross-block bind of #4 — passed
 validation cleanly.
@@ -59,7 +60,9 @@ npm i renovate && RENOVATE_DIST=./node_modules/renovate/dist node test/custom-ma
 ```
 
 `test/python-runtime.mjs` and `test/commit-types.mjs` use the same engine on
-the package-rule side: the first checks `requires-python` tracking and grouping,
+the package-rule side: the first checks `python runtime` tracking, grouping,
+soak and review for every member (pin, image, `.python-version`, workflow
+lines) through each consumer's real extends order,
 the second checks that no group mixes a hidden type (`ci:`, `chore:`) with `deps:` (see Commit types below).
 
 Exit codes: `0` pass, `1` a behavior regression, `2` the Renovate dist moved
@@ -95,7 +98,7 @@ CI plumbing is hidden because it isn't observable to anyone consuming the publis
 - `automerge.json` puts CI plumbing on `all non-major ci dependencies`, mirroring `default.json`'s `ci:` rules.
 - `mcp.json` puts non-major `devDependencies` on `all non-major dev dependencies`, mirroring its own `chore:` rule and taking `automerge.json`'s bundle update types.
 
-`test/commit-types.mjs` runs an app consumer and an MCP consumer through the real rule chain. It fails if either pair drifts, if a runtime and a dev bump in the same week share a branch, if a vulnerable dev dep stops releasing as `fix:`, or if any group carries two types. Known exceptions it allows: `pins` (a pin changes no resolved version, so the type doesn't matter), and `toolchain-versions` / `python runtime`. Those two would only mix if a repo pinned node/pnpm/python as a setup-action **input** (`node-version: 24.21.0`) while also shipping it via `.nvmrc`/`packageManager`/Dockerfile. Use `node-version-file` instead.
+`test/commit-types.mjs` runs an app consumer and an MCP consumer through the real rule chain. It fails if either pair drifts, if a runtime and a dev bump in the same week share a branch, if a vulnerable dev dep stops releasing as `fix:`, or if any group carries two types. Known exceptions it allows: `pins` (a pin changes no resolved version, so the type doesn't matter), and `toolchain-versions`, which would only mix if a repo pinned node/pnpm as a setup-action **input** (`node-version: 24.21.0`) while also shipping it via `.nvmrc`/`packageManager`/Dockerfile. Use `node-version-file` instead. `python runtime` is **not** an exception: it has workflow members (`uv python install X.Y`, setup-python's `python-version:`), so `python.json` types the whole group `deps:`, or one CI line would ship a CPython bump of the image as a hidden `ci:`. The price is that a branch of *only* workflow lines (a one-time catch-up of stale lines) also releases.
 
 ## Supply-chain posture
 
@@ -401,6 +404,41 @@ CI plumbing is hidden because it isn't observable to anyone consuming the publis
   `major-update`/`needs-review`. Grouping decides who shares the branch, not how
   it's reviewed. (For Python, the 7 days rides the `python-version` half; the
   image is exempt, as described above.)
+
+  **For Python the minor is the major.** CPython never ships 3 → 4, so the
+  X.Y release is the one that removes deprecations and changes the ABI tag
+  (`cp314` → `cp315`). `python.json` gives a `python runtime` minor the major
+  treatment: `automerge: false`, a 7-day soak, and `breaking`/`needs-review`.
+  Patches keep automerging. Before this, owine/trip-tracker #316 (3.14.8 →
+  3.15.0) automerged with nobody looking.
+
+- **`python runtime` consumer checklist.** What the preset can't enforce:
+
+  - **Dockerfile:** set `UV_PYTHON_DOWNLOADS=never` (and
+    `UV_PYTHON_PREFERENCE=only-system`) in every stage that runs uv. Without it,
+    a pin the base image can't satisfy silently downloads a uv-managed
+    interpreter, which a non-root runtime user can't reach, instead of failing
+    the build. youth-activity-scheduler sets neither (2026-10-19).
+  - **mypy:** in an exact-pin repo, don't set `[tool.mypy] python_version`.
+    mypy infers it from the interpreter it runs under, which is the pinned one,
+    and a hard-coded value is a second pin Renovate doesn't bump
+    (owine/trip-tracker #319). In a floor-only repo (`requires-python =
+    ">=3.14"`), pinning it to the floor is correct: it checks that you don't
+    use syntax newer than the floor.
+  - **CI:** prefer not passing a version at all. `uv sync` provisions from an
+    exact `requires-python`, and a bare `uv python install` reads
+    `.python-version`. If a workflow does pass one, `uv python install 3.14` /
+    `"3.14.8"` (one bare version) and setup-python's `python-version:` are
+    tracked and ride the group, keeping their precision (`3.14` → `3.15`).
+    Lists (`install 3.13 3.14`), `3.14t`, `cpython@…`, matrix expressions, and
+    setup-uv's `python-version:` input are not.
+  - **`.python-version` repos:** pyenv's manager looks the version up as a
+    Docker Hub tag, so it soaks on the re-pushed `tag_last_pushed` clock. A
+    re-push only makes a release look younger, so a patch can wait longer than
+    3 days to automerge, never shorter.
+  - **Never push to `renovate/python-runtime`.** Renovate then treats the
+    branch as edited and stops updating it, which strands any half that hasn't
+    landed yet. Use the dashboard's or the PR's retry checkbox instead.
 
 - **`home-assistant.json` is opt-in for HA add-on repos.** It pins
   `ghcr.io/home-assistant/base` (tag + digest) and gates its `minor` bumps to

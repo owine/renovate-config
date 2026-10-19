@@ -1,5 +1,7 @@
 #!/usr/bin/env node
-// Behavior tests for python.json's `requires-python` handling.
+// Behavior tests for python.json's `python runtime` group: the `requires-python`
+// shapes, then every member's grouping, soak and review (the pin, the image,
+// `.python-version`, and the `uv python install` workflow lines).
 //
 // WHY THIS EXISTS: python.json tracks an exact `requires-python = "==X.Y.Z"`
 // through the NATIVE pep621 manager (so Renovate regenerates uv.lock itself)
@@ -46,6 +48,8 @@ const load = async (rel) => {
 };
 
 const { extractPackageFile } = await load('modules/manager/pep621/extract.js');
+const { extractPackageFile: extractRegex } = await load('modules/manager/custom/regex/index.js');
+const { api: npmVersioning } = await load('modules/versioning/npm/index.js');
 const { normalizeDepNames } = await load('workers/repository/extract/manager-files.js');
 const { applyPackageRules } = await load('util/package-rules/index.js');
 const { api: pep440 } = await load('modules/versioning/pep440/index.js');
@@ -224,8 +228,26 @@ const consumer = {
   ],
 };
 
+// Each consumer's real extends order. automerge.json comes first everywhere,
+// and :node/:alpine/:home-assistant come after :python in some.
+const consumers = {
+  'trip-tracker': ['automerge.json', 'python.json', 'docker.json'],
+  'youth-activity-scheduler': ['automerge.json', 'node.json', 'python.json', 'docker.json'],
+  'claude-terminal-home-assistant': ['automerge.json', 'python.json', 'docker.json', 'alpine.json', 'node.json', 'home-assistant.json'],
+};
+const consumerConfig = (files) => ({
+  ...consumer,
+  packageRules: [...def.packageRules, ...files.flatMap((f) => preset(f).packageRules)],
+});
 const pyprojectDep = { manager: 'pep621', depType: 'requires-python', depName: 'python', packageName: 'python', datasource: 'python-version' };
 const imageDep = (depName) => ({ manager: 'dockerfile', depName, packageName: depName, datasource: 'docker' });
+// pyenv looks `.python-version` up as a Docker Hub tag: datasource docker,
+// the same as the image. Only `matchManagers` can tell them apart.
+const pyenvDep = { manager: 'pyenv', depName: 'python', packageName: 'python', datasource: 'docker' };
+// python.json's `uv python install` customManager, and Renovate's native
+// extraction of setup-python's `python-version:` input.
+const workflowDep = { manager: 'regex', depType: 'uv-python-install', depName: 'python', packageName: 'python', datasource: 'python-version', packageFile: '.github/workflows/ci.yml' };
+const setupPythonDep = { manager: 'github-actions', depType: 'uses-with', depName: 'python', packageName: 'actions/python-versions', datasource: 'github-releases', packageFile: '.github/workflows/ci.yml' };
 
 // Which soak each dep resolves to, in effective days (Renovate treats `null`
 // and `0 days` alike). The image is exempt; the python-version half keeps 3
@@ -238,6 +260,10 @@ const soaks = [
   { dep: imageDep('python'), updateType: 'major', days: 0, why: 'the python image is exempt for a major too (the pyproject half carries the 7 days)' },
   { dep: imageDep('docker.io/library/python'), updateType: 'patch', days: 0, why: 'the fully-qualified spelling is exempt too' },
   { dep: imageDep('python-slim'), updateType: 'patch', days: 3, why: 'a look-alike image keeps the soak' },
+  { dep: pyenvDep, updateType: 'patch', days: 3, why: '.python-version keeps the soak: the exemption is Dockerfile-only, though pyenv is datasource docker too (youth-activity-scheduler)' },
+  { dep: pyenvDep, updateType: 'major', days: 7, why: '.python-version keeps the 7-day major soak' },
+  { dep: workflowDep, updateType: 'patch', days: 3, why: 'the `uv python install` line soaks on the python-version clock, like requires-python' },
+  { dep: { ...imageDep('python'), manager: 'docker-compose' }, updateType: 'patch', days: 3, why: 'a python image outside a Dockerfile keeps the soak' },
   { dep: imageDep('postgres'), updateType: 'patch', days: 3, why: 'every other image keeps the soak' },
   { dep: imageDep('postgres'), updateType: 'major', days: 7, why: 'every other image keeps the 7-day major soak' },
 ];
@@ -255,7 +281,7 @@ for (const s of soaks) {
   checks++;
   const name = 'soak: internalChecksFilter is relaxed for the python runtime group only';
   const wrong = [];
-  for (const dep of [pyprojectDep, imageDep('python'), imageDep('docker.io/library/python')]) {
+  for (const dep of [pyprojectDep, imageDep('python'), imageDep('docker.io/library/python'), pyenvDep, workflowDep, setupPythonDep]) {
     const res = await applyPackageRules({ ...consumer, ...dep });
     if (res.internalChecksFilter !== 'none') wrong.push(`${dep.manager} ${dep.depName}: ${res.internalChecksFilter}`);
   }
@@ -323,6 +349,92 @@ for (const t of timelines) {
   else console.log(`  ok  ${name} (-> ${[...versions][0]}, stability-days ${stability})`);
 }
 
+// The `.python-version` + Dockerfile shape (owine/youth-activity-scheduler,
+// whose `requires-python` is a disabled floor). Both halves are datasource
+// docker, so before the exemption was scoped to the dockerfile manager NEITHER
+// carried a soak and stability-days went green on a day-old release.
+// `.python-version` is now aged by Docker Hub's re-pushed tag, which can only
+// make a release look younger: the soak can run long, never short.
+const pyenvTimelines = [
+  { why: 'tag pushed 10 days ago', pyenv: [['3.15.0', 10]], image: [['3.15.0-slim', 10]], stability: 'green' },
+  { why: 'fresh release, or a re-pushed tag: .python-version still soaking', pyenv: [['3.15.0', 1]], image: [['3.15.0-slim', 1]], stability: 'yellow' },
+  { why: 'image re-pushed, .python-version tag settled', pyenv: [['3.15.0', 10]], image: [['3.15.0-slim', 1]], stability: 'green' },
+];
+
+for (const t of pyenvTimelines) {
+  checks++;
+  const name = `soak: .python-version + Dockerfile — ${t.why}`;
+  const pyenv = await lookup(pyenvDep, '3.14.8', dockerVersioning, t.pyenv);
+  const image = await lookup(imageDep('python'), '3.14.8-slim', dockerVersioning, t.image);
+  const branch = generateBranchConfig([
+    { ...pyenv, packageFile: '.python-version' },
+    { ...image, packageFile: 'Dockerfile' },
+  ]).upgrades;
+  const wrong = [];
+  if (branch.length !== 2) wrong.push(`branch kept only ${JSON.stringify(branch.map((u) => u.packageFile))}`);
+  const versions = new Set(branch.map((u) => u.newVersion.replace(/-slim$/, '')));
+  if (versions.size !== 1) wrong.push(`halves target different versions: ${JSON.stringify([...versions])}`);
+  const stability = branch.some((u) => checkMinimumReleaseAge(u, u.releaseTimestamp).isPending) ? 'yellow' : 'green';
+  if (stability !== t.stability) wrong.push(`renovate/stability-days would be ${stability}, expected ${t.stability}`);
+  if (wrong.length) fail(name, wrong.join('\n'));
+  else console.log(`  ok  ${name} (-> ${[...versions][0]}, stability-days ${stability})`);
+}
+
+// ---------------------------------------------------------------------------
+// `uv python install X.Y` in workflows
+//
+// python.json's customManager, extracted from owine/trip-tracker's real ci.yml
+// shape (four stale `3.14` lines after #316) and run through each consumer's
+// rule chain. It must land on `python runtime`, not automerge.json's CI
+// group; it must be typed `deps:`, so a CI line cannot retype a runtime bump
+// `ci:`; and it must keep its precision under the rangeStrategy the rules
+// actually resolve. test/custom-managers.mjs covers the regex itself.
+// ---------------------------------------------------------------------------
+const uvManager = preset('python.json').customManagers.find((m) => m.depTypeTemplate === 'uv-python-install');
+const tripTrackerCi = ['lint', 'typecheck', 'test', 'audit']
+  .map((job) => `  ${job}:\n    runs-on: ubuntu-26.04\n    steps:\n      - uses: astral-sh/setup-uv@v10\n      - run: uv python install 3.14\n      - run: uv sync --frozen\n`)
+  .join('');
+const uvDeps = (extractRegex(`on: [push]\njobs:\n${tripTrackerCi}`, '.github/workflows/ci.yml', uvManager)?.deps ?? []).map((d) => {
+  normalizeDepNames(d);
+  return d;
+});
+
+{
+  checks++;
+  const name = 'uv python install: trip-tracker ci.yml yields its four `3.14` lines as python/python-version';
+  const got = uvDeps.map((d) => `${d.depName}@${d.currentValue} ${d.datasource} ${d.versioning} ${d.depType}`);
+  const want = Array(4).fill('python@3.14 python-version npm uv-python-install');
+  if (JSON.stringify(got) !== JSON.stringify(want)) fail(name, `got ${JSON.stringify(got)}`);
+  else console.log(`  ok  ${name}`);
+}
+
+for (const [repo, files] of Object.entries(consumers)) {
+  checks++;
+  const name = `uv python install: joins python runtime as deps:, keeps X.Y precision (${repo})`;
+  const cfg = consumerConfig(files);
+  const wrong = [];
+  for (const [updateType, currentValue, currentVersion, newVersion, want] of [
+    ['minor', '3.14', '3.14.8', '3.15.0', '3.15'],
+    ['patch', '3.14', '3.14.8', '3.14.9', null], // still satisfies the x-range: no update
+    ['minor', '3.14.8', '3.14.8', '3.15.0', '3.15.0'],
+    ['patch', '3.14.8', '3.14.8', '3.14.9', '3.14.9'],
+  ]) {
+    const label = `${currentValue} -> ${newVersion}`;
+    const res = await applyPackageRules({ ...cfg, ...uvDeps[0], manager: 'regex', packageFile: '.github/workflows/ci.yml', currentValue, updateType });
+    if (res.groupName !== 'python runtime') wrong.push(`${label}: groupName ${JSON.stringify(res.groupName)}`);
+    if (res.semanticCommitType !== 'deps') wrong.push(`${label}: typed ${res.semanticCommitType}:`);
+    // Renovate's lookup emits a `pin` update for any non-single-version value
+    // under rangeStrategy pin, which would turn `3.14` into `3.14.8`.
+    if (res.rangeStrategy !== 'replace') wrong.push(`${label}: rangeStrategy ${res.rangeStrategy}, expected replace (the pin trap)`);
+    const satisfied = npmVersioning.matches(newVersion, currentValue);
+    const newValue = satisfied ? null : npmVersioning.getNewValue({ currentValue, rangeStrategy: res.rangeStrategy, currentVersion, newVersion });
+    if (newValue !== want) wrong.push(`${label}: rewrote to ${JSON.stringify(newValue)}, expected ${JSON.stringify(want)}`);
+    if (updateType === 'minor' && res.automerge !== false) wrong.push(`${label}: minor automerge ${res.automerge}`);
+  }
+  if (wrong.length) fail(name, wrong.join('\n'));
+  else console.log(`  ok  ${name}`);
+}
+
 // ---------------------------------------------------------------------------
 // A CPython minor is reviewed, a patch automerges
 //
@@ -333,21 +445,13 @@ for (const t of timelines) {
 // extended first and :node/:alpine/:home-assistant come after :python in some
 // of them; a later preset re-enabling automerge would only show up here.
 // ---------------------------------------------------------------------------
-const consumers = {
-  'trip-tracker': ['automerge.json', 'python.json', 'docker.json'],
-  'youth-activity-scheduler': ['automerge.json', 'node.json', 'python.json', 'docker.json'],
-  'claude-terminal-home-assistant': ['automerge.json', 'python.json', 'docker.json', 'alpine.json', 'node.json', 'home-assistant.json'],
-};
-const consumerConfig = (files) => ({
-  ...consumer,
-  packageRules: [...def.packageRules, ...files.flatMap((f) => preset(f).packageRules)],
-});
-const pyenvDep = { manager: 'pyenv', depName: 'python', packageName: 'python', datasource: 'docker' };
 const halves = [
   { dep: pyprojectDep, minorSoak: 7 },
   { dep: imageDep('python'), minorSoak: 0 },
   { dep: imageDep('docker.io/library/python'), minorSoak: 0 },
-  { dep: pyenvDep },
+  { dep: pyenvDep, minorSoak: 7 },
+  { dep: workflowDep, minorSoak: 7 },
+  { dep: setupPythonDep, minorSoak: 7 },
 ];
 
 for (const [repo, files] of Object.entries(consumers)) {
