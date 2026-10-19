@@ -343,15 +343,28 @@ CI plumbing is hidden because it isn't observable to anyone consuming the publis
   satisfy fails the build instead of quietly falling back to a uv-managed
   interpreter.
 
-  The group can still **open split**, and that's expected. `minimumReleaseAge`
-  is checked per dependency against its own datasource. `python-version` dates
-  a release by CPython's release date, while the Docker side uses Docker Hub's
-  `tag_last_pushed`, which lags behind it. So the pyproject + `uv.lock` half can
-  open `renovate/python-runtime` alone and stay red at the Docker build until
-  the base-image half clears its soak. Renovate then adds that half to the same
-  branch, and the PR goes green on its own. **Don't push a fix in the
-  meantime**: a human commit makes Renovate treat the branch as edited, so the
-  Dockerfile half never lands (owine/trip-tracker #282).
+  **The soak gates the merge, not the PR.** `minimumReleaseAge` is checked
+  per dependency against its own datasource. `python-version` dates a release
+  by CPython's release date. The Docker side uses Docker Hub's
+  `tag_last_pushed`, and that is the *latest* push: official images are
+  re-pushed under the same tag on every Debian rebuild, which restarts the
+  clock (`3.15.0-slim` was dated 8 days after CPython 3.15.0). Under the default
+  `internalChecksFilter: strict`, Renovate drops whichever half is still
+  pending from the shared branch, so `renovate/python-runtime` opened with
+  pyproject only and failed docker-build (owine/trip-tracker #282, #316). The
+  group therefore sets `internalChecksFilter: none` and exempts the `python`
+  image from the soak. Both halves always land on one branch at one version, and
+  `renovate/stability-days` stays pending, blocking automerge, until the
+  CPython release is 3 days old (7 for a major). Exempting the image alone
+  would only flip the split: a fresh release would open a Dockerfile-only PR.
+  `test/python-runtime.mjs` runs both timelines through Renovate's real filter
+  and branch builder.
+
+  One gap remains, and it closes itself. If a run lands after one registry
+  lists the release but before the other does, the PR opens with one half and
+  stays red until the other half joins on a later run, usually within hours.
+  **Don't push a fix to it**: a human commit makes Renovate treat the branch
+  as edited and stop updating it, which strands the missing half.
 
   If the artifact step itself fails, the PR still opens with the pyproject bump
   and an unchanged `uv.lock`. You'll see it: Renovate posts an *Artifact update
@@ -386,7 +399,8 @@ CI plumbing is hidden because it isn't observable to anyone consuming the publis
   still isolate the major onto its own branch, and `default.json`'s major rule
   still applies the 7-day soak, `automerge: false`, and
   `major-update`/`needs-review`. Grouping decides who shares the branch, not how
-  it's reviewed.
+  it's reviewed. (For Python, the 7 days rides the `python-version` half; the
+  image is exempt, as described above.)
 
 - **`home-assistant.json` is opt-in for HA add-on repos.** It pins
   `ghcr.io/home-assistant/base` (tag + digest) and gates its `minor` bumps to
