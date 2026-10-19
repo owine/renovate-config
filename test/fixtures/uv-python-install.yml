@@ -1,0 +1,26 @@
+# frozen fixture — do not bump. python.json's `uv python install` manager.
+# Tracked: ONE bare X.Y or X.Y.Z as the whole argument, quoted or not, with
+# value-less flags before it or flags after it (trip-tracker/YAS use the first
+# shape). NOT tracked: a version list (bumping the first entry would collapse
+# two lanes), free-threaded, pre-release, implementation-prefixed, matrix
+# expressions, specifiers, and the version-less form.
+name: ci
+on: [push]
+jobs:
+  test:
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Install Python
+        run: uv python install 3.14
+      - run: uv python install "3.14.8"
+      - run: uv python install --default 3.13 && uv sync
+      - run: |
+          uv python install 3.12 --preview
+          uv sync --frozen
+      - run: uv python install 3.13 3.14
+      - run: uv python install 3.14t
+      - run: uv python install 3.15.0rc1
+      - run: uv python install cpython@3.14
+      - run: uv python install ${{ matrix.python }}
+      - run: uv python install '>=3.12'
+      - run: uv python install

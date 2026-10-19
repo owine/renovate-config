@@ -203,7 +203,11 @@ const consumers = [
       { why: '.nvmrc node', u: { manager: 'nvm', depName: 'node', datasource: 'node-version', packageFile: '.nvmrc', updateType: 'patch' }, group: 'toolchain-versions', type: 'deps' },
       { why: 'setup-node `node-version:` literal (uses-with)', u: { manager: 'github-actions', depName: 'node', datasource: 'github-releases', depType: 'uses-with', packageFile: WF, updateType: 'patch' }, group: 'toolchain-versions', type: 'ci' },
       { why: 'FROM python', u: { manager: 'dockerfile', depName: 'python', datasource: 'docker', packageFile: 'Dockerfile', updateType: 'patch' }, group: 'python runtime', type: 'deps' },
-      { why: 'setup-python `python-version:` literal (uses-with)', u: { manager: 'github-actions', depName: 'python', datasource: 'github-releases', depType: 'uses-with', packageFile: WF, updateType: 'patch' }, group: 'python runtime', type: 'ci' },
+      // python runtime is typed `deps:` by python.json, so its workflow members
+      // cannot retype a CPython bump of the shipped image `ci:`.
+      { why: '.python-version (pyenv)', u: { manager: 'pyenv', depName: 'python', datasource: 'docker', packageFile: '.python-version', updateType: 'patch' }, group: 'python runtime', type: 'deps' },
+      { why: '`uv python install X.Y` in a workflow (python.json customManager, path-typed ci: by default.json)', u: { manager: 'regex', depName: 'python', datasource: 'python-version', depType: 'uv-python-install', packageFile: WF, updateType: 'minor' }, group: 'python runtime', type: 'deps' },
+      { why: 'setup-python `python-version:` literal (uses-with; real packageName actions/python-versions)', u: { manager: 'github-actions', depName: 'python', packageName: 'actions/python-versions', datasource: 'github-releases', depType: 'uses-with', packageFile: WF, updateType: 'patch' }, group: 'python runtime', type: 'deps' },
     ],
     // Groups that CAN still carry two commit types, each with the reason it is
     // accepted. A group listed here that stops mixing fails the run, so a
@@ -212,7 +216,6 @@ const consumers = [
       pins: 'pin/pinDigest change no resolved version, so it does not matter that a mixed branch comes out `ci:` and does not release. Kept as one branch by design (automerge.json `pins`).',
       'toolchain-versions':
         'LATENT: only when a repo pins node/pnpm as a setup-node/pnpm action INPUT while also shipping it via .nvmrc/packageManager/Dockerfile. No preset consumer has that shape as of 2026-10-13. Splitting the group re-opens the runtime co-bump deadlock, so it is left open on purpose.',
-      'python runtime': 'LATENT: same shape as toolchain-versions, via setup-python `python-version:`. Same reason.',
     },
   },
   {
@@ -273,7 +276,7 @@ for (const consumer of consumers) {
     checks++;
     const name = `${c.u.manager} ${c.u.depName ?? c.u.updateType} [${c.u.updateType}${c.u.depType ? ' ' + c.u.depType : ''}${c.vuln ? ' VULNERABLE' : ''}] — ${c.why}`;
     const packageRules = c.vuln ? [...base, vulnRule(c.u)] : base;
-    const res = await applyPackageRules({ ...c.u, currentValue: c.u.currentVersion, packageName: c.u.depName, versioning: 'npm', packageRules });
+    const res = await applyPackageRules({ ...c.u, currentValue: c.u.currentVersion, packageName: c.u.packageName ?? c.u.depName, versioning: 'npm', packageRules });
 
     if (c.enabled === false) {
       if (res.enabled !== false) fail(name, `expected enabled: false, got enabled: ${res.enabled} (type ${res.semanticCommitType}, group ${res.groupName})`);
