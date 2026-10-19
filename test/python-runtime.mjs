@@ -323,6 +323,78 @@ for (const t of timelines) {
   else console.log(`  ok  ${name} (-> ${[...versions][0]}, stability-days ${stability})`);
 }
 
+// ---------------------------------------------------------------------------
+// A CPython minor is reviewed, a patch automerges
+//
+// CPython never ships a major, so the X.Y release is the breaking one, but
+// automerge.json's bundle rule treats it as an ordinary minor: owine/
+// trip-tracker #316 (3.14.8 -> 3.15.0) automerged with no review. Run every
+// half through EACH consumer's real extends order, because automerge.json is
+// extended first and :node/:alpine/:home-assistant come after :python in some
+// of them; a later preset re-enabling automerge would only show up here.
+// ---------------------------------------------------------------------------
+const consumers = {
+  'trip-tracker': ['automerge.json', 'python.json', 'docker.json'],
+  'youth-activity-scheduler': ['automerge.json', 'node.json', 'python.json', 'docker.json'],
+  'claude-terminal-home-assistant': ['automerge.json', 'python.json', 'docker.json', 'alpine.json', 'node.json', 'home-assistant.json'],
+};
+const consumerConfig = (files) => ({
+  ...consumer,
+  packageRules: [...def.packageRules, ...files.flatMap((f) => preset(f).packageRules)],
+});
+const pyenvDep = { manager: 'pyenv', depName: 'python', packageName: 'python', datasource: 'docker' };
+const halves = [
+  { dep: pyprojectDep, minorSoak: 7 },
+  { dep: imageDep('python'), minorSoak: 0 },
+  { dep: imageDep('docker.io/library/python'), minorSoak: 0 },
+  { dep: pyenvDep },
+];
+
+for (const [repo, files] of Object.entries(consumers)) {
+  checks++;
+  const name = `review: CPython minor is manual, patch automerges (${repo})`;
+  const cfg = consumerConfig(files);
+  const wrong = [];
+  for (const h of halves) {
+    const label = `${h.dep.manager} ${h.dep.depName}`;
+    const minor = await applyPackageRules({ ...cfg, ...h.dep, updateType: 'minor' });
+    const patch = await applyPackageRules({ ...cfg, ...h.dep, updateType: 'patch' });
+    if (minor.groupName !== 'python runtime') wrong.push(`${label} minor: groupName ${JSON.stringify(minor.groupName)}`);
+    if (minor.automerge !== false) wrong.push(`${label} minor: automerge ${minor.automerge}, expected false`);
+    for (const l of ['breaking', 'needs-review'])
+      if (!minor.addLabels?.includes(l)) wrong.push(`${label} minor: missing label ${l} (addLabels ${JSON.stringify(minor.addLabels)})`);
+    if (h.minorSoak !== undefined) {
+      const days = checkMinimumReleaseAge(minor, new Date().toISOString()).minimumReleaseAgeMs / DAY;
+      if (days !== h.minorSoak) wrong.push(`${label} minor: ${days}-day soak, expected ${h.minorSoak}`);
+    }
+    if (patch.groupName !== 'python runtime') wrong.push(`${label} patch: groupName ${JSON.stringify(patch.groupName)}`);
+    if (patch.automerge !== true) wrong.push(`${label} patch: automerge ${patch.automerge}, expected true`);
+    if (patch.addLabels?.includes('breaking')) wrong.push(`${label} patch: labelled breaking`);
+  }
+  if (wrong.length) fail(name, wrong.join('\n'));
+  else console.log(`  ok  ${name}`);
+}
+
+// Branch level: Renovate sets a branch's automerge to every(upgrade.automerge)
+// and unions addLabels, so the assembled python-runtime branch is what decides.
+for (const [updateType, automerge] of [['minor', false], ['patch', true]]) {
+  checks++;
+  const name = `review: the assembled python-runtime branch for a ${updateType} has automerge ${automerge}`;
+  const cfg = consumerConfig(consumers['trip-tracker']);
+  const upgrades = [];
+  for (const [dep, packageFile] of [[pyprojectDep, 'pyproject.toml'], [imageDep('python'), 'Dockerfile']]) {
+    const res = await applyPackageRules({ ...cfg, ...dep, updateType });
+    upgrades.push({ ...res, packageFile, branchName: 'renovate/python-runtime', newVersion: '3.15.0' });
+  }
+  const branch = generateBranchConfig(upgrades);
+  const wrong = [];
+  if (branch.automerge !== automerge) wrong.push(`branch automerge ${branch.automerge}`);
+  const hasBreaking = branch.addLabels.includes('breaking') && branch.addLabels.includes('needs-review');
+  if (hasBreaking !== !automerge) wrong.push(`branch addLabels ${JSON.stringify(branch.addLabels)}`);
+  if (wrong.length) fail(name, wrong.join('\n'));
+  else console.log(`  ok  ${name}`);
+}
+
 if (failures.length) {
   console.error(`\n${failures.length} failure(s):\n`);
   for (const f of failures) console.error(`  FAIL ${f}\n`);
