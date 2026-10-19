@@ -36,7 +36,8 @@ jobs:
 
       # Same engine, package-rule side: an exact `requires-python` pin must
       # stay tracked by the native pep621 manager and grouped with its base
-      # image, and every other `requires-python` shape must stay disabled.
+      # image, and every other `requires-python` shape must stay disabled. The
+      # release-age soak must not drop either half from the shared branch.
       - name: Test python runtime behavior
         run: node test/python-runtime.mjs
 

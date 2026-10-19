@@ -10,7 +10,9 @@
 // next to the Dockerfile base image. A regression in either direction is
 // silent: floor ranges start getting pinned fleet-wide, or the exact pin
 // drops out of the group and the two halves deadlock (owine/trip-tracker
-// #180/#182).
+// #180/#182). It also runs the real release-age filter and branch builder,
+// because the soak can split the group even when grouping is right
+// (owine/trip-tracker #282/#316).
 //
 // Same approach as custom-managers.mjs: import the real extractor, the real
 // package-rule engine and the real pep440 versioning out of the Renovate dist
@@ -47,6 +49,10 @@ const { extractPackageFile } = await load('modules/manager/pep621/extract.js');
 const { normalizeDepNames } = await load('workers/repository/extract/manager-files.js');
 const { applyPackageRules } = await load('util/package-rules/index.js');
 const { api: pep440 } = await load('modules/versioning/pep440/index.js');
+const { api: dockerVersioning } = await load('modules/versioning/docker/index.js');
+const { filterInternalChecks } = await load('workers/repository/process/lookup/filter-checks.js');
+const { generateBranchConfig } = await load('workers/repository/updates/generate.js');
+const { checkMinimumReleaseAge } = await load('util/minimum-release-age.js');
 const { GlobalConfig } = await load('config/global.js');
 const { init } = await load('logger/index.js');
 await init();
@@ -187,6 +193,134 @@ for (const i of images) {
   });
   if (res.groupName !== i.group) fail(name, `expected groupName ${JSON.stringify(i.group)}, got ${JSON.stringify(res.groupName)}`);
   else console.log(`  ok  ${name}`);
+}
+
+// ---------------------------------------------------------------------------
+// The release-age soak must not split the group
+//
+// The two halves are aged by different datasources, and Docker Hub re-dates
+// an official image on every rebuild, so their soak clocks disagree. Under
+// `internalChecksFilter: strict` that drops whichever half is still pending
+// from the branch: owine/trip-tracker #282/#316 opened with only
+// `requires-python`. Exempting the image alone just flips which half is
+// dropped. So these cases run the real lookup filter and the real branch
+// builder over all three upgrades of a trip-tracker-shaped repo (pyproject +
+// builder + runtime stages) and require the branch to keep all three on one
+// version, with the soak still holding `renovate/stability-days` pending.
+//
+// Uses the consumer's FULL extends order (base -> :automerge -> :python ->
+// :docker): the soak tiers live in default.json, so testing python.json
+// alone could not catch a precedence regression.
+// ---------------------------------------------------------------------------
+const def = preset('default.json');
+const consumer = {
+  internalChecksFilter: 'strict', // Renovate's global default
+  minimumReleaseAge: def.minimumReleaseAge,
+  minimumReleaseAgeBehaviour: def.minimumReleaseAgeBehaviour,
+  packageRules: [
+    ...def.packageRules,
+    ...preset('automerge.json').packageRules,
+    ...packageRules, // python.json, docker.json
+  ],
+};
+
+const pyprojectDep = { manager: 'pep621', depType: 'requires-python', depName: 'python', packageName: 'python', datasource: 'python-version' };
+const imageDep = (depName) => ({ manager: 'dockerfile', depName, packageName: depName, datasource: 'docker' });
+
+// Which soak each dep resolves to, in effective days (Renovate treats `null`
+// and `0 days` alike). The image is exempt; the python-version half keeps 3
+// days, and 7 for a major; any other image keeps the fleet soak.
+const DAY = 86_400_000;
+const soaks = [
+  { dep: pyprojectDep, updateType: 'patch', days: 3, why: 'requires-python keeps the 3-day soak' },
+  { dep: pyprojectDep, updateType: 'major', days: 7, why: 'requires-python keeps the 7-day major soak' },
+  { dep: imageDep('python'), updateType: 'patch', days: 0, why: 'the python image is exempt' },
+  { dep: imageDep('python'), updateType: 'major', days: 0, why: 'the python image is exempt for a major too (the pyproject half carries the 7 days)' },
+  { dep: imageDep('docker.io/library/python'), updateType: 'patch', days: 0, why: 'the fully-qualified spelling is exempt too' },
+  { dep: imageDep('python-slim'), updateType: 'patch', days: 3, why: 'a look-alike image keeps the soak' },
+  { dep: imageDep('postgres'), updateType: 'patch', days: 3, why: 'every other image keeps the soak' },
+  { dep: imageDep('postgres'), updateType: 'major', days: 7, why: 'every other image keeps the 7-day major soak' },
+];
+
+for (const s of soaks) {
+  checks++;
+  const name = `soak: ${s.dep.manager} ${s.dep.depName} (${s.updateType}) — ${s.why}`;
+  const res = await applyPackageRules({ ...consumer, ...s.dep, updateType: s.updateType });
+  const days = checkMinimumReleaseAge(res, new Date().toISOString()).minimumReleaseAgeMs / DAY;
+  if (days !== s.days) fail(name, `expected a ${s.days}-day soak, got ${days} (minimumReleaseAge: ${JSON.stringify(res.minimumReleaseAge)})`);
+  else console.log(`  ok  ${name}`);
+}
+
+{
+  checks++;
+  const name = 'soak: internalChecksFilter is relaxed for the python runtime group only';
+  const wrong = [];
+  for (const dep of [pyprojectDep, imageDep('python'), imageDep('docker.io/library/python')]) {
+    const res = await applyPackageRules({ ...consumer, ...dep });
+    if (res.internalChecksFilter !== 'none') wrong.push(`${dep.manager} ${dep.depName}: ${res.internalChecksFilter}`);
+  }
+  for (const dep of [imageDep('python-slim'), imageDep('postgres')]) {
+    const res = await applyPackageRules({ ...consumer, ...dep });
+    if (res.internalChecksFilter !== 'strict') wrong.push(`${dep.manager} ${dep.depName} should stay strict, got ${res.internalChecksFilter}`);
+  }
+  if (wrong.length) fail(name, wrong.join('\n'));
+  else console.log(`  ok  ${name}`);
+}
+
+// Lookup one dep the way Renovate does: package rules, then the internal-checks
+// filter over its candidate releases (`[version, ageInDays]`).
+const lookup = async (dep, current, versioning, releases) => {
+  const cfg = await applyPackageRules({ ...consumer, ...dep });
+  const sorted = releases.map(([version, days]) => ({ version, releaseTimestamp: new Date(Date.now() - days * DAY).toISOString() }));
+  const { release, pendingChecks } = await filterInternalChecks({ ...cfg, currentVersion: current }, versioning, 'non-major', sorted);
+  return { ...cfg, branchName: 'renovate/python-runtime', newVersion: release.version, releaseTimestamp: release.releaseTimestamp, pendingChecks };
+};
+
+const timelines = [
+  {
+    why: 'image re-dated by a Debian rebuild (trip-tracker #316)',
+    cpython: [['3.15.0', 10]],
+    image: [['3.15.0-slim', 2]],
+    stability: 'green',
+  },
+  {
+    why: 'fresh CPython release, image already pushed (the inverse split)',
+    cpython: [['3.15.0', 1]],
+    image: [['3.15.0-slim', 1]],
+    stability: 'yellow',
+  },
+  {
+    why: 'older patch soaked, newer minor still soaking (version skew)',
+    cpython: [['3.14.9', 10], ['3.15.0', 1]],
+    image: [['3.14.9-slim', 1], ['3.15.0-slim', 1]],
+    stability: 'yellow',
+  },
+];
+
+for (const t of timelines) {
+  checks++;
+  const name = `soak: one branch, one version — ${t.why}`;
+  const pyproject = await lookup(pyprojectDep, '3.14.8', pep440, t.cpython);
+  const image = await lookup(imageDep('python'), '3.14.8-slim', dockerVersioning, t.image);
+  const upgrades = [
+    { ...pyproject, depName: 'python', packageFile: 'pyproject.toml' },
+    { ...image, packageFile: 'Dockerfile (builder)' },
+    { ...image, packageFile: 'Dockerfile (runtime)' },
+  ];
+  const wrong = [];
+  if (upgrades.every((u) => u.pendingChecks)) wrong.push('every upgrade is pending, so no branch would open at all');
+  const branch = generateBranchConfig(upgrades.map((u) => ({ ...u }))).upgrades;
+  const kept = branch.map((u) => u.packageFile).sort();
+  if (kept.length !== 3) wrong.push(`branch kept only ${JSON.stringify(kept)}; the rest were dropped as pending`);
+  const versions = new Set(branch.map((u) => u.newVersion.replace(/-slim$/, '')));
+  if (versions.size !== 1) wrong.push(`halves target different versions: ${JSON.stringify([...versions])}`);
+  // The same check the branch worker uses to set renovate/stability-days.
+  const pending = branch.filter((u) => checkMinimumReleaseAge(u, u.releaseTimestamp).isPending);
+  const stability = pending.length ? 'yellow' : 'green';
+  if (stability !== t.stability)
+    wrong.push(`renovate/stability-days would be ${stability}, expected ${t.stability} (pending: ${JSON.stringify(pending.map((u) => u.packageFile))})`);
+  if (wrong.length) fail(name, wrong.join('\n'));
+  else console.log(`  ok  ${name} (-> ${[...versions][0]}, stability-days ${stability})`);
 }
 
 if (failures.length) {
