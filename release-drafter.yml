@@ -1,0 +1,77 @@
+# Shared release-drafter v7 base config for owine/* repos.
+#
+# Consumers load it from .github/release-drafter.yml with
+#   _extends: owine/renovate-config:/release-drafter.yml
+# and override only tag-prefix / tag-template / name-template, and only when
+# their tags aren't `vX.Y.Z`. See README "Releases: release-drafter".
+#
+# Categories key off the Conventional Commit type in the PR TITLE. The fleet
+# squash-merges only, so the PR title is the commit subject, and for Renovate
+# PRs that subject is what default.json's semanticCommitType rules produce.
+# The type -> section mapping reproduces release-please's, with one deliberate
+# change: perf and revert are shown fleet-wide. test/release-drafter.mjs
+# checks it against the types the presets assign.
+
+name-template: 'v$RESOLVED_VERSION'
+tag-template: 'v$RESOLVED_VERSION'
+# Filters which existing releases count as "the last release". A consumer
+# whose tags don't start with `v` must override this too, or the draft
+# starts from no previous release.
+tag-prefix: 'v'
+change-template: '- $TITLE (#$NUMBER)'
+no-changes-template: '_No user-facing changes._'
+template: |
+  $CHANGES
+
+categories:
+  # release-please's hidden types: no changelog line, no version bump.
+  # `breaking: false` keeps `chore!:` & co. in play, the way release-please
+  # still lists a hidden-type commit under BREAKING CHANGES and bumps major.
+  - type: pre-exclude
+    when:
+      conventional:
+        types: [chore, ci, docs, test, refactor, build, style]
+        breaking: false
+
+  - title: '⚠ Breaking Changes'
+    semver-increment: major
+    exclusive: true
+    when: { conventional: { breaking: true } }
+
+  - title: Features
+    semver-increment: minor
+    exclusive: true
+    when: { conventional: { type: feat } }
+
+  - title: Bug Fixes
+    exclusive: true
+    when: { conventional: { type: fix } }
+
+  - title: Performance
+    exclusive: true
+    when: { conventional: { type: perf } }
+
+  - title: Reverts
+    exclusive: true
+    when: { conventional: { type: revert } }
+
+  - title: Dependencies
+    collapse-after: 10
+    when: { conventional: { type: deps } }
+
+  # Fallback: anything still included is at least a patch.
+  - type: version-resolver
+    semver-increment: patch
+
+# Strip the type prefix from each title, like release-please's changelog:
+#   fix(api): x  -> **api:** x
+#   deps: x      -> x
+# `change-title` rules run on $TITLE at render time, after categorization
+# has read the raw title, and don't depend on change-template's `- `.
+replacers:
+  - target: change-title
+    search: '/^\w+\(([^)]+)\)!?: /'
+    replace: '**$1:** '
+  - target: change-title
+    search: '/^\w+!?: /'
+    replace: ''

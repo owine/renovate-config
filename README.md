@@ -65,6 +65,13 @@ soak and review for every member (pin, image, `.python-version`, workflow
 lines) through each consumer's real extends order,
 the second checks that no group mixes a hidden type (`ci:`, `chore:`) with `deps:` (see Commit types below).
 
+`test/release-drafter.mjs` closes the loop on the consumer side: it checks that
+the shared `release-drafter.yml` shows every commit type the presets release
+on and pre-excludes the hidden ones, and that a preset assigning a new type
+fails until someone decides where it goes (see Releases: release-drafter
+below). It parses the YAML with the Renovate dist's own parser, and mirrors
+release-drafter's category matching rather than installing release-drafter.
+
 Exit codes: `0` pass, `1` a behavior regression, `2` the Renovate dist moved
 (a layout problem, not a config one — likely an image bump).
 
@@ -99,6 +106,113 @@ CI plumbing is hidden because it isn't observable to anyone consuming the publis
 - `mcp.json` puts non-major `devDependencies` on `all non-major dev dependencies`, mirroring its own `chore:` rule and taking `automerge.json`'s bundle update types.
 
 `test/commit-types.mjs` runs an app consumer and an MCP consumer through the real rule chain. It fails if either pair drifts, if a runtime and a dev bump in the same week share a branch, if a vulnerable dev dep stops releasing as `fix:`, or if any group carries two types. Known exceptions it allows: `pins` (a pin changes no resolved version, so the type doesn't matter), and `toolchain-versions`. In the MCP libraries it already mixes `ci:` (annotated CI matrix lanes) with `chore:` (`.nvmrc`/`packageManager`), which is harmless because both are hidden. In an app it would only mix if a workflow Node literal is annotated (`# renovate: … depName=node-lts-NN packageName=node`) while the app also ships Node via `.nvmrc`/`packageManager`/Dockerfile. Use `node-version-file` there instead. `python runtime` is **not** an exception: it has workflow members (`uv python install X.Y`, setup-python's `python-version:`), so `python.json` types the whole group `deps:`, or one CI line would ship a CPython bump of the image as a hidden `ci:`. The price is that a branch of *only* workflow lines (a one-time catch-up of stale lines) also releases.
+
+## Releases: release-drafter
+
+The fleet is moving from release-please to [release-drafter](https://github.com/release-drafter/release-drafter) v7, to drop the release-PR noise. Instead of a release PR, every push to `main` refreshes one **draft** GitHub Release, and a human publishes it when they want to release.
+
+[`release-drafter.yml`](release-drafter.yml) at this repo's root is the shared base config, so the six repos can't drift. It sorts merged PRs by the Conventional Commit type of the **PR title**. The fleet squash-merges only, so the PR title is the commit subject, and for a Renovate PR that subject is whatever `default.json`'s `semanticCommitType` rules produced. The mapping is release-please's:
+
+| PR title type | Section | Version bump |
+|---|---|---|
+| any type with `!` (`feat!:`, `fix(api)!:`, `chore!:`) | ⚠ Breaking Changes | major |
+| `feat` | Features | minor |
+| `fix` | Bug Fixes | patch |
+| `perf` | Performance | patch |
+| `revert` | Reverts | patch |
+| `deps` | Dependencies (collapsed past 10 entries) | patch |
+| `chore`, `ci`, `docs`, `test`, `refactor`, `build`, `style` | hidden | none |
+| anything else (unknown type, non-conventional title) | listed unsectioned at the top | patch |
+
+`perf` and `revert` are shown in every repo, even where release-please used to hide `perf`. That is a deliberate harmonization. The type prefix is stripped from each line the way release-please did it: `fix(api): x` renders as `**api:** x`. `test/release-drafter.mjs` asserts this table against the types the presets assign.
+
+**Differences from release-please to expect:**
+- **A draft always exists.** If only hidden types merged since the last release, the draft reads `_No user-facing changes._` with a patch version, where release-please opened no PR. Don't publish that draft.
+- **Lines link PRs (`#123`), not commit SHAs.**
+- **Non-conventional titles show up.** release-please ignored them; release-drafter lists them unsectioned and bumps patch.
+- **No `bump-minor-pre-major`.** In a `0.x` repo, a breaking change drafts `1.0.0`, where release-please may have drafted `0.(x+1).0`.
+
+### Per-repo migration checklist
+
+Do one repo at a time. Phase A is additive and safe to merge any time. Do Phase B only after Phase A's check passes.
+
+**Phase A: additive (release-please stays live)**
+
+a. Add `.github/release-drafter.yml`:
+
+   ```yaml
+   _extends: owine/renovate-config:/release-drafter.yml
+   ```
+
+   The base assumes tags are `vX.Y.Z`. Check the repo's existing tags (`gh release list`). If they're shaped differently, override **all three** tag settings. `tag-prefix` decides which existing releases count as "the last release", so a wrong prefix makes the draft start from scratch. For bare `X.Y.Z` tags:
+
+   ```yaml
+   _extends: owine/renovate-config:/release-drafter.yml
+   tag-prefix: ''
+   tag-template: '$RESOLVED_VERSION'
+   name-template: '$RESOLVED_VERSION'
+   ```
+
+   Override nothing else; categories and replacers stay shared. The `_extends` is read with the workflow's `GITHUB_TOKEN`, which only works because this repo is public.
+
+b. Add `.github/workflows/release-drafter.yml`:
+
+   ```yaml
+   name: release-drafter
+
+   on:
+     push:
+       branches: [main]
+     workflow_dispatch:
+
+   permissions: {}
+
+   concurrency:
+     group: release-drafter
+     cancel-in-progress: true
+
+   jobs:
+     update-draft:
+       runs-on: ubuntu-26.04
+       timeout-minutes: 10
+       permissions:
+         contents: write
+         pull-requests: read
+       steps:
+         - uses: release-drafter/release-drafter@978bb0b30c5ee8cdd332ced253758157150d43f0 # v7.10.0
+           with:
+             commitish: main
+   ```
+
+   It uses the default `GITHUB_TOKEN`, with no App token. Writing a draft triggers nothing downstream. When a human publishes the draft in the UI, `release: published` fires as that human, so downstream workflows run. (A release *published* by `GITHUB_TOKEN` would not trigger them, so never set `publish: true` here.)
+
+c. After it merges, compare the draft release with the open release-please PR. They must agree on the **version** and on **which entries appear in which section**. Expected differences: heading text, PR links instead of SHAs, and `perf`/`revert` entries now shown. **If the version or the set of entries differs, stop and report. Don't start Phase B.**
+
+**Phase B: cutover**
+
+a. Delete the release-please workflow (or its job), `release-please-config.json`, `.release-please-manifest.json`, and every `x-release-please-*` marker (`grep -rn x-release-please`).
+
+b. Make every publish/build trigger that keyed off release-please's output run on:
+
+   ```yaml
+   on:
+     release:
+       types: [published]
+   ```
+
+   In that run, `GITHUB_REF` is `refs/tags/<tag>` and `GITHUB_SHA` is the tagged commit. Replace any `needs: release-please` / `if: steps.release.outputs.release_created` plumbing with that trigger.
+
+c. `CHANGELOG.md`:
+   - **Home Assistant add-ons keep it.** The promote job prepends the published release's body.
+   - **Every other repo freezes it.** Leave the history, and add a note at the top: `Releases after vX.Y.Z are documented in [GitHub Releases](https://github.com/owine/<repo>/releases).`
+
+d. Update CLAUDE.md, README and CONTRIBUTING wherever they describe release-please or release PRs. Drop release-please paths (`release-please-config.json`, `.release-please-manifest.json`, `CHANGELOG.md` where frozen) from workflow `paths:`/`paths-ignore:` filters and any similar path lists.
+
+e. Close the open release-please PR and delete its branch (`release-please--branches--main…`). **Ask before deleting the `autorelease: pending` / `autorelease: tagged` labels.**
+
+f. List any `RELEASE_APP_*` secrets, `release` environment and GitHub App that no remaining job uses. Report the list for the human to remove by hand; don't remove them.
+
+g. The human publishes the first draft. Watch the downstream `release: published` run through to the end, and check the tag and the artifacts it produced.
 
 ## Supply-chain posture
 
