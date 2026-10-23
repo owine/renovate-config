@@ -48,6 +48,13 @@ jobs:
       - name: Test commit-type grouping
         run: node test/commit-types.mjs
 
+      # Consumers on release-drafter read that commit type back out of the
+      # squash-merged PR title. Asserts the shared release-drafter.yml shows
+      # every type the presets release on (`deps`, `fix`) and pre-excludes
+      # the hidden ones (`ci`, `chore`).
+      - name: Test release-drafter categories
+        run: node test/release-drafter.mjs
+
       - name: Validate Renovate presets
         run: |
           renovate-config-validator --strict \
