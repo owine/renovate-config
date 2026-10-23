@@ -115,7 +115,7 @@ The fleet is moving from release-please to [release-drafter](https://github.com/
 
 | PR title type | Section | Version bump |
 |---|---|---|
-| any type with `!` **in the title** (`feat!:`, `fix(api)!:`, `chore!:`) | ⚠ Breaking Changes | major |
+| any single-word type with `!` **in the title** (`feat!:`, `fix(api)!:`, `chore!:`) | ⚠ Breaking Changes | major |
 | `feat` | Features | minor |
 | `fix` | Bug Fixes | patch |
 | `perf` | Performance | patch |
