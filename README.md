@@ -115,7 +115,7 @@ The fleet is moving from release-please to [release-drafter](https://github.com/
 
 | PR title type | Section | Version bump |
 |---|---|---|
-| any type with `!` (`feat!:`, `fix(api)!:`, `chore!:`) | ⚠ Breaking Changes | major |
+| any single-word type with `!` **in the title** (`feat!:`, `fix(api)!:`, `chore!:`) | ⚠ Breaking Changes | major |
 | `feat` | Features | minor |
 | `fix` | Bug Fixes | patch |
 | `perf` | Performance | patch |
@@ -129,6 +129,7 @@ The fleet is moving from release-please to [release-drafter](https://github.com/
 **Differences from release-please to expect:**
 - **A draft always exists.** If only hidden types merged since the last release, the draft reads `_No user-facing changes._` with a patch version, where release-please opened no PR. Don't publish that draft.
 - **Lines link PRs (`#123`), not commit SHAs.**
+- **Only the title's `!` marks a breaking change.** release-drafter parses the PR title alone. A `BREAKING CHANGE:` footer in the PR body, which release-please read from the squash commit body, is ignored: `feat: x` with that footer drafts a minor, not a major. Put the `!` in the title.
 - **Non-conventional titles show up.** release-please ignored them; release-drafter lists them unsectioned and bumps patch.
 - **No `bump-minor-pre-major`.** In a `0.x` repo, a breaking change drafts `1.0.0`, where release-please may have drafted `0.(x+1).0`.
 
@@ -189,6 +190,8 @@ b. Add `.github/workflows/release-drafter.yml`:
 c. After it merges, compare the draft release with the open release-please PR. They must agree on the **version** and on **which entries appear in which section**. Expected differences: heading text, PR links instead of SHAs, and `perf`/`revert` entries now shown. **If the version or the set of entries differs, stop and report. Don't start Phase B.**
 
 **Phase B: cutover**
+
+Steps a–d go in **one PR**. Removing the release-please job (a) without rewriting the workflows that consume its outputs (b) in the same merge leaves those workflows broken or never triggered, and the next release ships without its artifacts. Steps e–g follow once that PR merges.
 
 a. Delete the release-please workflow (or its job), `release-please-config.json`, `.release-please-manifest.json`, and every `x-release-please-*` marker (`grep -rn x-release-please`).
 
