@@ -109,9 +109,16 @@ CI plumbing is hidden because it isn't observable to anyone consuming the publis
 
 ## Releases: release-drafter
 
-The fleet is moving from release-please to [release-drafter](https://github.com/release-drafter/release-drafter) v7, to drop the release-PR noise. Instead of a release PR, every push to `main` refreshes one **draft** GitHub Release, and a human publishes it when they want to release.
+The fleet releases with [release-drafter](https://github.com/release-drafter/release-drafter) v7. It replaced release-please in the six repos that ran it, to drop the release-PR noise. There is no release PR: every push to `main` refreshes one **draft** GitHub Release, and a human publishes it when they want to release.
 
-[`release-drafter.yml`](release-drafter.yml) at this repo's root is the shared base config, so the six repos can't drift. It sorts merged PRs by the Conventional Commit type of the **PR title**. The fleet squash-merges only, so the PR title is the commit subject, and for a Renovate PR that subject is whatever `default.json`'s `semanticCommitType` rules produced. The mapping is release-please's:
+[`release-drafter.yml`](release-drafter.yml) at this repo's root is the shared base config, so its ten consumers can't drift. Every consumer's publish workflow runs on `release: published`, which fires when a human publishes the draft. What that run does depends on the repo's release shape. Each shape links one canonical workflow; the details live there, not here.
+
+- **npm libraries**: [unifi-protect-mcp `release.yml`](https://github.com/owine/unifi-protect-mcp/blob/main/.github/workflows/release.yml). Also unifi-network-mcp. The committed `package.json` reads `0.0.0-development`; the build stamps the tag's version into it, then publishes to npm with provenance.
+- **Home Assistant add-ons**: [claude-terminal-home-assistant `publish.yml`](https://github.com/owine/claude-terminal-home-assistant/blob/main/.github/workflows/publish.yml). Also ha-hetrixtools-agent. Once the multi-arch image exists, the promote job commits the `config.yaml` version bump and the release body (prepended to `CHANGELOG.md`) to `main` in one signed `createCommitOnBranch` commit. Supervisor reads both from `main`, so HA never offers a version before its image or without its changelog.
+- **Docker images, retagged**: [doc-scanner `release.yml`](https://github.com/owine/doc-scanner/blob/main/.github/workflows/release.yml). Also house-manager, trip-tracker and youth-activity-scheduler. The release retags the `sha-<long>` image CI already pushed for that commit on `main` (or for its nearest built ancestor) as `X.Y.Z`, `X.Y`, `X` and `latest`. It never rebuilds. It is forward-only: `X.Y`, `X` and `latest` move only when this is the newest release in that series, so `latest` is always the newest release.
+- **Docker images, rebuilt on release**: MLB-Deferred-Contract-Calculator ([`publish.yml`](https://github.com/owine/MLB-Deferred-Contract-Calculator/blob/main/.github/workflows/publish.yml): `X.Y.Z`, `X.Y`, `X` and `latest`) and nut-cgi ([`build.yml`](https://github.com/owine/nut-cgi/blob/main/.github/workflows/build.yml): `vX.Y.Z`, `vX.Y`, `vX` and `latest`, promoted after test and scan). Both build the image from the tagged commit, and neither moves tags forward-only.
+
+The draft sorts merged PRs by the Conventional Commit type of the **PR title**. The fleet squash-merges only, so the PR title is the commit subject, and for a Renovate PR that subject is whatever `default.json`'s `semanticCommitType` rules produced. The mapping carries over from release-please:
 
 | PR title type | Section | Version bump |
 |---|---|---|
@@ -126,16 +133,18 @@ The fleet is moving from release-please to [release-drafter](https://github.com/
 
 `perf` and `revert` are shown in every repo, even where release-please used to hide `perf`. That is a deliberate harmonization. The type prefix is stripped from each line the way release-please did it: `fix(api): x` renders as `**api:** x`. `test/release-drafter.mjs` asserts this table against the types the presets assign.
 
-**Differences from release-please to expect:**
+**How it differs from release-please:**
 - **A draft always exists.** If only hidden types merged since the last release, the draft reads `_No user-facing changes._` with a patch version, where release-please opened no PR. Don't publish that draft.
 - **Lines link PRs (`#123`), not commit SHAs.**
 - **Only the title's `!` marks a breaking change.** release-drafter parses the PR title alone. A `BREAKING CHANGE:` footer in the PR body, which release-please read from the squash commit body, is ignored: `feat: x` with that footer drafts a minor, not a major. Put the `!` in the title.
 - **Non-conventional titles show up.** release-please ignored them; release-drafter lists them unsectioned and bumps patch.
 - **No `bump-minor-pre-major`.** In a `0.x` repo, a breaking change drafts `1.0.0`, where release-please may have drafted `0.(x+1).0`.
 
-### Per-repo migration checklist
+### Onboarding a repo
 
-Do one repo at a time. Phase A is additive and safe to merge any time. Do Phase B only after Phase A's check passes.
+This is the procedure the six release-please repos followed to cut over, and the one to follow for any new consumer. Do one repo at a time. Phase A is additive and safe to merge any time. Do Phase B only after Phase A's check passes.
+
+**A repo that never ran release-please** skips Phase A's comparison (step c) and all of Phase B. It needs Phase A steps a and b, plus a publish workflow modeled on the canonical one for its release shape above.
 
 **Phase A: additive (release-please stays live)**
 
