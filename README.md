@@ -211,7 +211,7 @@ a. Delete the release-please workflow (or its job), `release-please-config.json`
 b. Make every publish/build trigger that keyed off release-please's output run on:
 
    ```yaml
-   on:
+   "on":
      release:
        types: [published]
    ```
