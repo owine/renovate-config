@@ -144,7 +144,13 @@ The draft sorts merged PRs by the Conventional Commit type of the **PR title**. 
 
 This is the procedure the six release-please repos followed to cut over, and the one to follow for any new consumer. Do one repo at a time. Phase A is additive and safe to merge any time. Do Phase B only after Phase A's check passes.
 
-**A repo that never ran release-please** skips Phase A's comparison (step c) and all of Phase B. It needs Phase A steps a and b, plus a publish workflow modeled on the canonical one for its release shape above.
+**A repo that never ran release-please** skips Phase A step c (the comparison) and Phase B steps a–f, but **keeps Phase B step g**: confirm `main` is green, publish the first release, and watch the downstream run end to end. It needs Phase A steps a and b, plus a publish workflow modeled on the canonical one for its release shape above.
+
+If the repo has no releases yet, publish its first one by hand, in the tag shape step a expects, **before** adding release-drafter. The first draft then starts from that release instead of spanning the whole history:
+
+```sh
+gh release create v1.0.0 --target main --notes "First versioned release."
+```
 
 **Phase A: additive (release-please stays live)**
 
