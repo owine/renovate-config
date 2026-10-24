@@ -161,7 +161,7 @@ b. Add `.github/workflows/release-drafter.yml`:
    ```yaml
    name: release-drafter
 
-   on:
+   "on":
      push:
        branches: [main]
      workflow_dispatch:
@@ -187,7 +187,20 @@ b. Add `.github/workflows/release-drafter.yml`:
 
    It uses the default `GITHUB_TOKEN`, with no App token. Writing a draft triggers nothing downstream. When a human publishes the draft in the UI, `release: published` fires as that human, so downstream workflows run. (A release *published* by `GITHUB_TOKEN` would not trigger them, so never set `publish: true` here.)
 
-c. After it merges, compare the draft release with the open release-please PR. They must agree on the **version** and on **which entries appear in which section**. Expected differences: heading text, PR links instead of SHAs, and `perf`/`revert` entries now shown. **If the version or the set of entries differs, stop and report. Don't start Phase B.**
+c. After it merges, check the draft release against what release-please would release. **If the check fails, stop and report. Don't start Phase B.**
+   - **A release-please PR is open:** compare the draft with it. They must agree on the **version** and on **which entries appear in which section**. Expected differences: heading text, PR links instead of SHAs, and `perf`/`revert` entries now shown. If the version or the set of entries differs, the check fails.
+   - **No release-please PR is open** (only hidden types merged since the last release): the latest release-please run log on `main` must say `No user facing commits found … skipping`, and the draft must read `_No user-facing changes._` with a patch version. The "must agree on version" rule doesn't apply here: release-please proposes no version, and the patch version is release-drafter's placeholder (see "A draft always exists" above). Any entry in the draft fails the check.
+
+   **Optional stronger check: replay a past release.** A range of only hidden types passes without testing sections, prefix stripping or `!`. To test those, dry-run the draft over the range of an earlier release and compare it with that release's `CHANGELOG.md` entry. In v7.10.0, `from` is only the comparison baseline: the draft lists PRs from `from` to `commitish`, but the version still resolves from the latest *published* release, and `from` doesn't choose which draft is updated. `dry-run: true` writes nothing. To replay `vB` (previous tag `vA`), push a scratch branch that changes the step's `with:` to:
+
+   ```yaml
+           with:
+             commitish: refs/tags/vB
+             from: refs/tags/vA
+             dry-run: true
+   ```
+
+   Run it with `gh workflow run release-drafter.yml --ref <branch>`. The job log prints `[dry-run] Would update existing release … with payload: {…}`; compare its `body` with `vB`'s `CHANGELOG.md` entry, then delete the branch unmerged. Sections and entries must match, with the same expected differences as above. One more expected difference: a `!` entry appears only under ⚠ Breaking Changes, while release-please's CHANGELOG also repeated it under its type's section. Compare the **bump level** (`vA`→`vB`), not the version number, which is computed from the latest release. Pick a range with `feat`/`fix` entries, ideally a scoped one and a `!`. The scratch run shares the `release-drafter` concurrency group, so if it cancels a run on `main`, rerun that one with `gh workflow run release-drafter.yml`.
 
 **Phase B: cutover**
 
@@ -204,18 +217,23 @@ b. Make every publish/build trigger that keyed off release-please's output run o
    ```
 
    In that run, `GITHUB_REF` is `refs/tags/<tag>` and `GITHUB_SHA` is the tagged commit. Replace any `needs: release-please` / `if: steps.release.outputs.release_created` plumbing with that trigger.
+   - **Remove the old `push: tags: [...]` trigger** from the same workflows. Once `push:` lists only `branches:`, the tag that publishing a release creates doesn't also start a push run. If you leave it, every release builds twice.
+   - **`release: published` runs the workflow file at the tagged commit**, not the one on `main`. A draft published on a commit from before Phase B would run the old file, which has no `release:` trigger, so nothing would build. The workflow's `commitish: main` normally prevents that; don't retarget the draft to an older commit in the UI.
+   - **Audit every `github.event_name`/`github.ref` condition** in the consuming workflow. A gate like `if: github.event_name == 'push'` is now false on release runs. docker/metadata-action's `type=ref,event=tag` checks for `refs/tags/`, not the event name, so it keeps working.
 
 c. `CHANGELOG.md`:
    - **Home Assistant add-ons keep it.** The promote job prepends the published release's body.
-   - **Every other repo freezes it.** Leave the history, and add a note at the top: `Releases after vX.Y.Z are documented in [GitHub Releases](https://github.com/owine/<repo>/releases).`
+   - **Every other repo freezes it.** Leave the history, and add a note at the top: `Releases after vX.Y.Z are documented in [GitHub Releases](https://github.com/owine/<repo>/releases).` Also reword the Keep-a-Changelog boilerplate: "All notable changes to this project will be documented in this file" contradicts the freeze note. nut-cgi used `All notable changes up to vX.Y.Z are documented in this file.`
 
-d. Update CLAUDE.md, README and CONTRIBUTING wherever they describe release-please or release PRs. Drop release-please paths (`release-please-config.json`, `.release-please-manifest.json`, `CHANGELOG.md` where frozen) from workflow `paths:`/`paths-ignore:` filters and any similar path lists.
+d. Update CLAUDE.md, README and CONTRIBUTING wherever they describe release-please or release PRs. Drop release-please paths (`release-please-config.json`, `.release-please-manifest.json`, `CHANGELOG.md` where frozen) from workflow `paths:`/`paths-ignore:` filters, `.dockerignore`, and any similar path lists. While you're in those lists, drop entries for files that never existed (nut-cgi had a stale `version.txt` entry).
 
 e. Close the open release-please PR and delete its branch (`release-please--branches--main…`). **Ask before deleting the `autorelease: pending` / `autorelease: tagged` labels.**
 
 f. List any `RELEASE_APP_*` secrets, `release` environment and GitHub App that no remaining job uses. Report the list for the human to remove by hand; don't remove them.
+   - A user `gh` token can't list GitHub App installations (403). To identify the App, check the author of a past release-please PR: `gh pr view <n> --json author` returns `app/<slug>`.
+   - Check `gh secret list` for other secrets the migration left unused, not just `RELEASE_APP_*` (nut-cgi had a stale `ANTHROPIC_API_KEY`).
 
-g. The human publishes the first draft. Watch the downstream `release: published` run through to the end, and check the tag and the artifacts it produced.
+g. Before the human publishes, check that the latest `main` build is green (`gh run list --branch main`). Where promote waits on a scan, a red `main` means the release gets a tag but no image. On nut-cgi, a stale gha cache layer kept a fixed transitive apk CVE in the image; a `workflow_dispatch` run with force-rebuild fixed it. Then the human publishes the first draft. Watch the downstream `release: published` run through to the end, and check the tag and the artifacts it produced.
 
 ## Supply-chain posture
 
