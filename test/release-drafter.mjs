@@ -127,7 +127,7 @@ const classify = (title) => {
 // ---------------------------------------------------------------------------
 // Every type a preset can assign has a decided section
 //
-// The fleet's release contract, from README "Commit types & release-please".
+// The fleet's release contract, from README "Commit types & release notes".
 // A preset that starts assigning a type not listed here fails, so the
 // release consequence is decided on purpose rather than by the fallback.
 // ---------------------------------------------------------------------------

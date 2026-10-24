@@ -6,10 +6,11 @@
 // message. Renovate types it with the highest-priority type among the
 // branch's upgrades, from the fixed list [chore, ci, build, fix, feat]
 // (generateBranchConfig). `deps` is not in that list, so a single `ci:` or
-// `chore:` upgrade retypes the whole branch, and release-please treats both
-// as hidden. owine/unifi-protect-mcp #284 shipped the production dependency
-// `ws` 8.22.0 that way, with no CHANGELOG entry, because an Actions bump
-// shared its `all non-major dependencies` branch.
+// `chore:` upgrade retypes the whole branch, and release-drafter.yml
+// pre-excludes both from the release notes. owine/unifi-protect-mcp #284
+// shipped the production dependency `ws` 8.22.0 that way under
+// release-please, which hid the same types, with no CHANGELOG entry, because
+// an Actions bump shared its `all non-major dependencies` branch.
 //
 // Two splits keep hidden types off the `deps:` bundle, each typed in one file
 // and grouped in another:

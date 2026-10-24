@@ -63,7 +63,7 @@ npm i renovate && RENOVATE_DIST=./node_modules/renovate/dist node test/custom-ma
 the package-rule side: the first checks `python runtime` tracking, grouping,
 soak and review for every member (pin, image, `.python-version`, workflow
 lines) through each consumer's real extends order,
-the second checks that no group mixes a hidden type (`ci:`, `chore:`) with `deps:` (see Commit types below).
+the second checks that no group mixes a hidden type (`ci:`, `chore:`) with `deps:` (see Commit types & release notes below).
 
 `test/release-drafter.mjs` closes the loop on the consumer side: it checks that
 the shared `release-drafter.yml` shows every commit type the presets release
@@ -75,37 +75,37 @@ release-drafter's category matching rather than installing release-drafter.
 Exit codes: `0` pass, `1` a behavior regression, `2` the Renovate dist moved
 (a layout problem, not a config one — likely an image bump).
 
-## Commit types & release-please
+## Commit types & release notes
 
-These presets are tuned for consumer repos running [release-please](https://github.com/googleapis/release-please), which parses the Conventional Commit **type** to decide releases: `feat` → minor, `fix`/`deps` → patch, `chore`/`ci` → **hidden, no release**.
+These presets are tuned for consumer repos running [release-drafter](https://github.com/release-drafter/release-drafter) (see Releases: release-drafter below). It sorts each merged PR into the draft release by the Conventional Commit **type** of its title: `feat` → Features, minor; `fix` → Bug Fixes, patch; `deps` → Dependencies, patch; `chore`/`ci` → **hidden**. A hidden type doesn't block a release. It is pre-excluded, so it adds no line to the notes and nothing to the version bump. A draft with nothing user-facing reads `_No user-facing changes._` and isn't published.
 
 **No dependency update is ever typed `feat:`.** A `feat:` commit — and therefore a minor version bump — means a feature someone here wrote. An upstream version number crossing a major line is not that, so majors ride the `deps:` patch baseline like everything else; what marks them out is their own PR, the 7-day soak, `automerge: false` and the `major-update`/`needs-review` labels.
 
-Renovate ships built-in default `packageRules` that type every bump `chore:` (npm production deps `fix:`), and `packageRules` always beat top-level config — so a bare `semanticCommitType` is inert and Dockerfile/Actions/apk repos would get **no release-please releases at all**. `default.json` reclaims the types via `packageRules`:
+Renovate ships built-in default `packageRules` that type every bump `chore:` (npm production deps `fix:`), and `packageRules` always beat top-level config — so a bare `semanticCommitType` is inert. In Dockerfile/Actions/apk repos every Renovate PR would then be pre-excluded, and **no dependency update would ever reach the release notes**. `default.json` reclaims the types via `packageRules`:
 
-| Update | Commit type | release-please effect |
-|--------|-------------|-----------------------|
+| Update | Commit type | release-drafter effect |
+|--------|-------------|------------------------|
 | patch / minor / pin / digest | `deps:` | patch → *Dependencies* section |
 | major | `deps:` | patch → *Dependencies* section (plus `major-update`/`needs-review` labels) |
-| GitHub Actions / workflow tooling | `ci:` | **no release** (hidden) |
+| GitHub Actions / workflow tooling | `ci:` | **hidden** (pre-excluded) |
 | security (`vulnerabilityAlerts`) | `fix:` | patch → *Bug Fixes* section |
-| lock file maintenance | `chore:` | **no release** (hidden) |
-| dev-only, **`mcp.json` only**: `devDependencies`, `packageManager`, `.nvmrc` | `chore:` | **no release** (hidden) |
+| lock file maintenance | `chore:` | **hidden** (pre-excluded) |
+| dev-only, **`mcp.json` only**: `devDependencies`, `packageManager`, `.nvmrc` | `chore:` | **hidden** (pre-excluded) |
 
-Rule precedence (last match wins) is: catch-all `*` → `deps` → lock file maintenance → `chore` → major (no type of its own; inherits `deps`) → github-actions + `.github/workflows/**` → `ci` → (`mcp.json`) dev-only → `chore` → security `fix` (forced, so a CVE in an action or a dev dep still releases as a Bug Fix).
+Rule precedence (last match wins) is: catch-all `*` → `deps` → lock file maintenance → `chore` → major (no type of its own; inherits `deps`) → github-actions + `.github/workflows/**` → `ci` → (`mcp.json`) dev-only → `chore` → security `fix` (forced, so a CVE in an action or a dev dep still lands in Bug Fixes).
 
-**Dev-only updates in libraries (`mcp.json`).** A library's consumers install its `dependencies`, never its `devDependencies`. Under the `deps:` baseline, though, every lefthook or `@types/node` bump cut a patch release anyway: 8 of the 9 Dependencies entries in owine/unifi-protect-mcp 2.15.0 were dev-only or toolchain, and each one was a no-op release for every `@latest` consumer. `mcp.json` types them `chore:`. It is scoped to that preset on purpose. An app's dev tooling still produces a deployable artifact, so apps keep the `deps:` baseline and their single bundle. The toolchain group is split by what consumers can see:
+**Dev-only updates in libraries (`mcp.json`).** A library's consumers install its `dependencies`, never its `devDependencies`. Under release-please and the `deps:` baseline, though, every lefthook or `@types/node` bump cut a patch release anyway: 8 of the 9 Dependencies entries in owine/unifi-protect-mcp 2.15.0 were dev-only or toolchain, and each one was a no-op release for every `@latest` consumer. Under release-drafter the same bumps would pad the draft's Dependencies section and make a draft with nothing consumer-visible look worth publishing. `mcp.json` types them `chore:`. It is scoped to that preset on purpose. An app's dev tooling still produces a deployable artifact, so apps keep the `deps:` baseline and their single bundle. The toolchain group is split by what consumers can see:
 - `packageManager` and `.nvmrc` are `chore:`. Corepack honors `packageManager` only in this repo's own root, never in a consumer's install.
 - `engines` is consumer-visible, so it is never typed `chore:`. `mcp.json` disables every `engines` entry (the fleet's `pin` would otherwise narrow the range to one version). That also keeps an engines bump from ever sharing the `chore:` toolchain branch.
 - A Dockerfile `FROM node` would be consumer-visible too. No MCP repo builds an image today; if one starts, split the image out of `toolchain-versions` first.
 
-CI plumbing is hidden because it isn't observable to anyone consuming the published image, package or server — an `actions/checkout` bump shouldn't move a version number. That covers both the `github-actions` manager (`.github/workflows`, `.github/actions`, `workflow-templates/`, any `action.yml`) and the workflow version literals the custom regex manager extracts; the latter is matched by *path*, not by `matchManagers: ["custom.regex"]`, so a consumer repo's own custom managers aren't silenced along with it.
+CI plumbing is hidden because it isn't observable to anyone consuming the published image, package or server — an `actions/checkout` bump shouldn't add a line to the notes, move the drafted version, or make a draft look worth publishing. That covers both the `github-actions` manager (`.github/workflows`, `.github/actions`, `workflow-templates/`, any `action.yml`) and the workflow version literals the custom regex manager extracts; the latter is matched by *path*, not by `matchManagers: ["custom.regex"]`, so a consumer repo's own custom managers aren't silenced along with it.
 
-**A branch gets one commit type, and any hidden type beats `deps`.** Renovate types a grouped branch by the highest-priority type among its upgrades, from the fixed list `chore` < `ci` < `build` < `fix` < `feat`. `deps` isn't on that list, so one `ci:` **or `chore:`** upgrade retypes the whole branch, and every runtime bump on it ships without a release. That is how owine/unifi-protect-mcp #284 released `ws` 8.22.0 with no changelog entry. Every hidden type therefore gets its own branch, grouped with exactly the matchers that assign the type:
+**A branch gets one commit type, and any hidden type beats `deps`.** Renovate types a grouped branch by the highest-priority type among its upgrades, from the fixed list `chore` < `ci` < `build` < `fix` < `feat`. `deps` isn't on that list, so one `ci:` **or `chore:`** upgrade retypes the whole branch, and every runtime bump on it drops out of the release notes. If nothing else user-facing merged, the draft reads `_No user-facing changes._` and the bump isn't released at all. That is how owine/unifi-protect-mcp #284 released `ws` 8.22.0 with no changelog entry, under release-please, which hid the same types. Every hidden type therefore gets its own branch, grouped with exactly the matchers that assign the type:
 - `automerge.json` puts CI plumbing on `all non-major ci dependencies`, mirroring `default.json`'s `ci:` rules.
 - `mcp.json` puts non-major `devDependencies` on `all non-major dev dependencies`, mirroring its own `chore:` rule and taking `automerge.json`'s bundle update types.
 
-`test/commit-types.mjs` runs an app consumer and an MCP consumer through the real rule chain. It fails if either pair drifts, if a runtime and a dev bump in the same week share a branch, if a vulnerable dev dep stops releasing as `fix:`, or if any group carries two types. Known exceptions it allows: `pins` (a pin changes no resolved version, so the type doesn't matter), and `toolchain-versions`. In the MCP libraries it already mixes `ci:` (annotated CI matrix lanes) with `chore:` (`.nvmrc`/`packageManager`), which is harmless because both are hidden. In an app it would only mix if a workflow Node literal is annotated (`# renovate: … depName=node-lts-NN packageName=node`) while the app also ships Node via `.nvmrc`/`packageManager`/Dockerfile. Use `node-version-file` there instead. `python runtime` is **not** an exception: it has workflow members (`uv python install X.Y`, setup-python's `python-version:`), so `python.json` types the whole group `deps:`, or one CI line would ship a CPython bump of the image as a hidden `ci:`. The price is that a branch of *only* workflow lines (a one-time catch-up of stale lines) also releases.
+`test/commit-types.mjs` runs an app consumer and an MCP consumer through the real rule chain. It fails if either pair drifts, if a runtime and a dev bump in the same week share a branch, if a vulnerable dev dep stops landing as `fix:`, or if any group carries two types. Known exceptions it allows: `pins` (a pin changes no resolved version, so the type doesn't matter), and `toolchain-versions`. In the MCP libraries it already mixes `ci:` (annotated CI matrix lanes) with `chore:` (`.nvmrc`/`packageManager`), which is harmless because both are hidden. In an app it would only mix if a workflow Node literal is annotated (`# renovate: … depName=node-lts-NN packageName=node`) while the app also ships Node via `.nvmrc`/`packageManager`/Dockerfile. Use `node-version-file` there instead. `python runtime` is **not** an exception: it has workflow members (`uv python install X.Y`, setup-python's `python-version:`), so `python.json` types the whole group `deps:`, or one CI line would hide a CPython bump of the image behind `ci:`. The price is that a branch of *only* workflow lines (a one-time catch-up of stale lines) also gets a Dependencies line in the draft.
 
 ## Releases: release-drafter
 
