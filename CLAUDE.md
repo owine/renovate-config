@@ -113,6 +113,15 @@ gh run view <id> -R owine/<repo> --log | grep -E 'Config fetched|Found .* merged
 ```
 
 The run log must show `Config fetched from "owine/renovate-config/release-drafter.yml"`.
+
+A single dispatch proves nothing for a step that writes the release (the
+summary step). A write that loses the draft's tag looks fine on run one, and
+run two then opens a second draft (summary v1 on nut-cgi). Run release-drafter
+twice in a row (`gh workflow run release-drafter.yml -R owine/<repo>`, wait,
+again). `gh release list` must then show exactly one draft, and its tag must
+carry the repo's prefix (`v…`; hetrixtools `hetrixtools-agent-v…`; the MCPs
+bare `X.Y.Z`), never `untagged-…`.
+
 A draft reading `_No user-facing changes._` is correct when only hidden types
 merged; don't publish it.
 
