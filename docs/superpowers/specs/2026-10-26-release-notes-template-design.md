@@ -159,12 +159,17 @@ sed -E -e 's/^(#+ )/#\1/' \
   -e '/^<\/?details>$/d' -e '/^<summary>.*<\/summary>$/d' \
   -e '/^\*\*Full changelog:\*\*/d' \
   -e '/^- .*\(#[0-9]+(, #[0-9]+)*\)$/{' -e ':a' \
-  -e 's@([(]|, )#([0-9]+)([,)])@\1[#\2](https://github.com/'"$REPO"'/issues/\2)\3@' \
+  -e 's@([(]|, )#([0-9]+)((, #[0-9]+)*\))$@\1[#\2](https://github.com/'"$REPO"'/issues/\2)\3@' \
   -e 'ta' -e '}' | cat -s
 ```
 
 The link rule uses `@` as its delimiter on purpose: `$REPO` is
-`owner/name`, and its `/` would end a `s/…/…/` early.
+`owner/name`, and its `/` would end a `s/…/…/` early. It is anchored to the
+entry's trailing number list (`((, #N)*\))$`), so a `(#12)` inside a title is
+left alone too; claude-terminal #477 tightened it to this during review, and
+that merged `promote` is the canonical copy hetrixtools ports. The transform
+runs inside `body=$(…)` there, so `$(…)` also trims the blank line left when
+the compare line, the body's last, is deleted.
 
 ## Rollout
 
