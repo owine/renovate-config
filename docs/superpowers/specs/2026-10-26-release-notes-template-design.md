@@ -89,7 +89,12 @@ The script:
    release_id: Number(process.env.RELEASE_ID) })` and returns unless
    `draft` is true (it may have been published between the two steps);
 5. writes `<line>\n\n<body>` back with `github.rest.repos.updateRelease`
-   (same `release_id`).
+   (same `release_id`), sending `tag_name: release.tag_name` from step 4's
+   read. A PATCH without `tag_name` drops a draft's tag: GitHub resets it to
+   `untagged-<hash>` and keeps the name, target and body. release-drafter then
+   finds no draft with its tag prefix and creates a new one on every run. v1
+   omitted it, and the nut-cgi pilot (#130) ended with two untagged `v1.10.2`
+   drafts; v2 sends it.
 
 Form: `scripts/release-summary.js` is written as the body of an
 `actions/github-script` inline `script:`, which runs as an async function
@@ -101,16 +106,19 @@ octokit that records `updateRelease` calls and a fake `process.env`. A
 `dry-run` has no release id, so render checks outside a real draft run the
 script locally with those mocks.
 
-Idempotent: release-drafter rewrites the body from scratch on every run, so
-the line never stacks. Consumers run with `cancel-in-progress: true`, so a run
-cancelled between the two steps leaves that draft without a summary until the
-next push; harmless.
+Idempotent, with one condition: release-drafter rewrites the body from scratch
+on every run, so the line never stacks, but the draft itself is only kept if
+the write carries `tag_name` (step 5). Without it, each run's PATCH orphans
+the draft it just summarized. A single run can't show this: the first run
+looks right, and the second one creates the duplicate. Consumers run with
+`cancel-in-progress: true`, so a run cancelled between the two steps leaves
+that draft without a summary until the next push; harmless.
 
 The canonical script is `scripts/release-summary.js` in renovate-config,
 covered by `test/release-summary.mjs`. It starts with the marker comment
-`// owine/renovate-config scripts/release-summary.js v1`; each repo's step
-carries an identical copy including that line, so drift is one
-`grep -r 'release-summary.js v'` across the fleet. Bump the version on every
+`// owine/renovate-config scripts/release-summary.js v2` (v1 dropped the tag,
+step 5); each repo's step carries an identical copy including that line, so
+drift is one `grep -r 'release-summary.js v'` across the fleet. Bump the version on every
 change. renovate-config never runs the script in a workflow.
 
 Optional highlight: when publishing, the human may add a sentence above the
@@ -194,13 +202,35 @@ repos' next push.
 - `test/release-summary.mjs` (new, plain node, no dependencies): runs
   `scripts/release-summary.js` on fixture bodies: no-changes, single fix,
   mixed sections, collapsed `<details>` dependencies, uncategorized entries,
-  singular vs plural.
+  singular vs plural. The mock `getRelease` returns a tag, and every
+  `updateRelease` must carry that `tag_name`, for a `v…`, a prefixed and a
+  bare tag.
 - `promote`: run the script locally against an old-format and a new-format
   body (grouped numbers, `<details>`, compare line, summary), as #467 did.
 - nut-cgi pilot: `workflow_dispatch`; because its draft is currently empty,
   also replay an old release range with `dry-run: true` and run the summary
   script locally (the test's mocks) on that would-be body to see a full
   render. A dry run has no release id, so the workflow step skips itself.
+- Replay recipe (from the pilot). To render release `vB` (previous tag `vA`),
+  push a scratch branch whose release-drafter step has:
+
+  ```yaml
+  with:
+    commitish: refs/tags/vB
+    from: vA
+    filter-by-range: '<A+1'   # e.g. '<1.10.1' when vA is v1.10.0
+    dry-run: true
+  ```
+
+  `from` only sets the comparison baseline. `filter-by-range` restricts which
+  published releases count as "the last release", so `$PREVIOUS_TAG` (and the
+  compare line) resolves to `vA` instead of the latest release. Give the
+  scratch workflow its own `concurrency.group` (e.g. `release-drafter-replay`)
+  so it can't cancel a run on `main`. Delete the branch unmerged.
+- Any change to the summary step: a single run proves nothing, because the
+  duplicate only appears on the next run. Dispatch release-drafter twice in a
+  row; `gh release list` must then show exactly one draft, tagged with the
+  repo's prefix (`v…`, `hetrixtools-agent-v…`, bare `X.Y.Z`).
 
 ## Out of scope
 

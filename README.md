@@ -198,11 +198,11 @@ The HA add-ons' `promote` job turns this body into `CHANGELOG.md`: it links ever
           RELEASE_ID: ${{ steps.draft.outputs.id }}
         with:
           script: |
-            // owine/renovate-config scripts/release-summary.js v1
+            // owine/renovate-config scripts/release-summary.js v2
             // …the rest of scripts/release-summary.js, verbatim
 ```
 
-The `script:` is a verbatim copy of [`scripts/release-summary.js`](scripts/release-summary.js), marker comment included, so `grep -r 'release-summary.js v'` across the fleet shows which version each repo runs. The canonical copy lives here, covered by `test/release-summary.mjs`; bump the marker on every change and roll the copy out. The step counts the `- ` lines under each heading down to the `**Full changelog:**` line, so footer lines never count. It writes nothing when there is nothing to count, and nothing to a release that was published between the two steps. release-drafter rewrites the body on every run, so the line never stacks. A sentence a human adds above it before publishing stays, since the step never touches a published release.
+The `script:` is a verbatim copy of [`scripts/release-summary.js`](scripts/release-summary.js), marker comment included, so `grep -r 'release-summary.js v'` across the fleet shows which version each repo runs. The canonical copy lives here, covered by `test/release-summary.mjs`; bump the marker on every change and roll the copy out. The step counts the `- ` lines under each heading down to the `**Full changelog:**` line, so footer lines never count. It writes nothing when there is nothing to count, and nothing to a release that was published between the two steps. Its write sends the draft's own `tag_name` back (read from `getRelease`). A PATCH without it resets the draft's tag to `untagged-…`, release-drafter then finds no draft with its prefix, and every run adds another draft. v1 did exactly that on nut-cgi, so run v2 or later, and check any change to this step with two consecutive runs (CLAUDE.md, Verifying). release-drafter rewrites the body on every run, so the line never stacks. A sentence a human adds above it before publishing stays, since the step never touches a published release.
 
 **Footer.** Each consumer sets `footer:` in its `.github/release-drafter.yml`: a "use this release" snippet for its own shape. The base sets no footer, so this overrides nothing shared. release-drafter appends it directly after the template, so the block starts with an empty line (truly empty, with no spaces past the block's indentation, or the YAML won't parse), then a `### Use this release` heading:
 
@@ -294,11 +294,14 @@ c. After it merges, check the draft release against what release-please would re
    ```yaml
            with:
              commitish: refs/tags/vB
-             from: refs/tags/vA
+             from: vA
+             filter-by-range: '<A+1'   # e.g. '<1.10.1' when vA is v1.10.0
              dry-run: true
    ```
 
-   Run it with `gh workflow run release-drafter.yml --ref <branch>`. The job log prints `[dry-run] Would update existing release … with payload: {…}`; compare its `body` with `vB`'s `CHANGELOG.md` entry, then delete the branch unmerged. Sections and entries must match, with the same expected differences as above. One more expected difference: a `!` entry appears only under ⚠ Breaking Changes, while release-please's CHANGELOG also repeated it under its type's section. Compare the **bump level** (`vA`→`vB`), not the version number, which is computed from the latest release. Pick a range with `feat`/`fix` entries, ideally a scoped one and a `!`. The scratch run shares the `release-drafter` concurrency group, so if it cancels a run on `main`, rerun that one with `gh workflow run release-drafter.yml`.
+   `filter-by-range` limits the releases that count as "the last release" to `vA` and older, which is what makes `$PREVIOUS_TAG` (and the compare line) `vA`. Also give the scratch workflow its own `concurrency.group` (e.g. `release-drafter-replay`) so it can't cancel a run on `main`.
+
+   Run it with `gh workflow run release-drafter.yml --ref <branch>`. The job log prints `[dry-run] Would update existing release … with payload: {…}`; compare its `body` with `vB`'s `CHANGELOG.md` entry, then delete the branch unmerged. Sections and entries must match, with the same expected differences as above. One more expected difference: a `!` entry appears only under ⚠ Breaking Changes, while release-please's CHANGELOG also repeated it under its type's section. Compare the **bump level** (`vA`→`vB`), not the version number, which is computed from the latest release. Pick a range with `feat`/`fix` entries, ideally a scoped one and a `!`.
 
 **Phase B: cutover**
 

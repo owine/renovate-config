@@ -1,4 +1,4 @@
-// owine/renovate-config scripts/release-summary.js v1
+// owine/renovate-config scripts/release-summary.js v2
 //
 // Prepends a count of the draft's entries to its body, e.g.
 //   **1 bug fix · 4 dependency updates**
@@ -56,5 +56,13 @@ if (!release.draft) {
   core.info(`Release ${release_id} is no longer a draft; leaving its body alone.`);
   return;
 }
-await github.rest.repos.updateRelease({ ...context.repo, release_id, body: `${summary}\n\n${body}` });
+// Send the draft's own tag back. A PATCH without tag_name drops a draft's tag
+// (v1.10.2 -> untagged-…), and release-drafter then opens a new draft on every
+// run because none carries its prefix. v1 did this on nut-cgi.
+await github.rest.repos.updateRelease({
+  ...context.repo,
+  release_id,
+  tag_name: release.tag_name,
+  body: `${summary}\n\n${body}`,
+});
 core.info(`Summary: ${summary}`);

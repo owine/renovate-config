@@ -8,7 +8,10 @@
 // draft in every one of them. The script's two contracts are checked here:
 // it counts only the change lines above the `**Full changelog:**` line (a
 // footer's `- ` lines are not changes), and it writes only to a release that
-// is still a draft with something to summarize.
+// is still a draft with something to summarize. A third: the write sends back
+// the draft's own tag_name. GitHub's PATCH drops a draft's tag when tag_name is
+// missing (`v1.10.2` -> `untagged-…`), and release-drafter, finding no draft
+// with its prefix, opens a new one on every run (v1 did this on nut-cgi).
 //
 // The bodies below are shaped like release-drafter v7.10.0's render of the
 // shared release-drafter.yml: `## <category title>` headings, `- ` lines, a
@@ -37,14 +40,14 @@ const check = (name, pass, msg) => {
 // actions/github-script compiles `script:` into an async function with
 // github, context and core (among others) as parameters; `process` is the
 // real global there, and a parameter here so the env is the fixture's.
-const run = async (body, { draft = true, releaseId = '42' } = {}) => {
+const run = async (body, { draft = true, releaseId = '42', tag = 'v1.4.1' } = {}) => {
   const calls = { getRelease: [], updateRelease: [] };
   const github = {
     rest: {
       repos: {
         getRelease: async (args) => {
           calls.getRelease.push(args);
-          return { data: { id: Number(releaseId), draft, body } };
+          return { data: { id: Number(releaseId), draft, tag_name: tag, body } };
         },
         updateRelease: async (args) => {
           calls.updateRelease.push(args);
@@ -66,11 +69,12 @@ const FOOTER = ['', '### Use this release', '', '```sh', 'docker pull ghcr.io/ow
 const LIST_FOOTER = ['', '### Use this release', '', '- add the server to your MCP client', '- restart it', ''].join('\n');
 const body = (...lines) => [...lines, '', COMPARE, ''].join('\n');
 
-// Writes `<line>\n\n<body>` to release 42 of the context repo, exactly once.
-const expectSummary = async (name, input, line) => {
-  const calls = await run(input);
+// Writes `<line>\n\n<body>` to release 42 of the context repo, exactly once,
+// keeping the tag getRelease returned.
+const expectSummary = async (name, input, line, { tag = 'v1.4.1' } = {}) => {
+  const calls = await run(input, { tag });
   const got = calls.updateRelease;
-  const want = { owner: 'owine', repo: 'nut-cgi', release_id: 42, body: `${line}\n\n${input}` };
+  const want = { owner: 'owine', repo: 'nut-cgi', release_id: 42, tag_name: tag, body: `${line}\n\n${input}` };
   check(
     `${name} -> ${line}`,
     got.length === 1 && JSON.stringify(got[0]) === JSON.stringify(want),
@@ -179,6 +183,15 @@ console.log('\n[the footer is not counted]');
   const input = body('## 📦 Dependencies', '', '- update pnpm to v12.3.6 (#70)') + LIST_FOOTER;
   await expectSummary('a footer with `- ` lines after the compare line', input, '**1 dependency update**');
   await expectSummary('the docker footer', body('## 🐛 Bug Fixes', '', '- retry on 502 (#71)') + FOOTER, '**1 bug fix**');
+}
+
+console.log('\n[the write keeps the draft\'s tag]');
+{
+  // Every expectSummary above already wants tag_name: 'v1.4.1'. These use tags
+  // the script can't have hardcoded: another repo's prefix, a bare version.
+  const input = body('## 🐛 Bug Fixes', '', '- retry on 502 (#90)');
+  await expectSummary('a prefixed tag (hetrixtools)', input, '**1 bug fix**', { tag: 'hetrixtools-agent-v2.3.1' });
+  await expectSummary('a bare X.Y.Z tag (the MCPs)', input, '**1 bug fix**', { tag: '3.0.2' });
 }
 
 console.log('\n[only drafts are written]');
