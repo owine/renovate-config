@@ -188,6 +188,17 @@ expectTitle('ci!: require ubuntu-26.04', { hidden: false, section: '💥 Breakin
 // release-drafter compiles `/re/flags` strings to a RegExp and uses VS Code's
 // `$1` replacement syntax, which agrees with String.replace for plain `$n`.
 // ---------------------------------------------------------------------------
+// The HA `promote` seds link `#N` only in an entry's trailing `(#N, #M)`
+// list, and scripts/release-summary.js counts `- ` lines: both read the shape
+// change-template renders. An unknown variable (`$NUMBER` typo'd) renders as
+// literal text, so nothing else would catch it.
+console.log('\n[change-template]');
+check(
+  `change-template ${JSON.stringify(config['change-template'])} is a \`- \` line ending in the \`($NUMBERS)\` list`,
+  /^- .*\(\$NUMBERS\)$/.test(config['change-template'] ?? ''),
+  'promote links PR numbers only in a trailing `(#N, #M)` list; update both promote seds first',
+);
+
 console.log('\n[change-title replacers]');
 const toRegex = (s) => {
   const m = /^\/(.+)\/([gimsuy]*)$/s.exec(s);

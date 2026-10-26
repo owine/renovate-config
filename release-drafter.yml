@@ -42,7 +42,9 @@ template: |
 # prefix so the replacers below strip it like any other line. Hard-coding it
 # drops a scope, which Renovate titles don't carry (no semanticCommitScope in
 # default.json); revisit both templates if that changes. A `fix: … [security]`
-# title matches neither rule and stays its own Bug Fixes line.
+# title matches neither rule and stays its own Bug Fixes line. A group branch
+# titled both ways (`update tanstack` / `update tanstack to v5.104.1`) matches
+# both rules and renders as two lines; accepted, see README.
 group-changes:
   # `update pnpm to v12.3.5`, `update dependency ws to v8.22.0`,
   # `update curl apk package to v8.23.0-r0`, `update … docker digest to abc1234`,

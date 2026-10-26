@@ -135,7 +135,7 @@ The draft sorts merged PRs by the Conventional Commit type of the **PR title**. 
 | `fix` | 🐛 Bug Fixes | patch |
 | `perf` | ⚡ Performance | patch |
 | `revert` | ⏪ Reverts | patch |
-| `deps` | 📦 Dependencies (one line per dependency, collapsed past 5 lines) | patch |
+| `deps` | 📦 Dependencies (repeat bumps share a line, collapsed past 5 lines) | patch |
 | `chore`, `ci`, `docs`, `test`, `refactor`, `build`, `style` | hidden | none |
 | anything else (unknown type, non-conventional title) | listed unsectioned at the top | patch |
 
@@ -175,8 +175,8 @@ docker pull ghcr.io/owine/<repo>:1.4.1
 From the top:
 
 - **Summary line**, written by each consumer's summary step (below), not by release-drafter.
-- **Sections**, from the shared config. Renovate bumps of one dependency share a line: the `group-changes` rules match the raw PR title, the line takes the newest version, and it lists every PR number. `update dependency X to …`, `update X apk package to …`, `update X docker digest to …` and a group branch such as `update all non-major dependencies` each fold into one line. A `fix: … [security]` line is never grouped. Past 5 lines (a group counts once), Dependencies collapses into a `<details>` block.
-- **Compare link**, from the shared `template`. It needs a previous release, which onboarding guarantees.
+- **Sections**, from the shared config. Renovate bumps of one dependency share a line: the `group-changes` rules match the raw PR title, the line takes the version of the newest merged PR, and it lists every PR number. `update dependency X to …`, `update X apk package to …`, `update X docker digest to …` and a group branch such as `update all non-major dependencies` each fold into one line. A `fix: … [security]` line is never grouped. One known split: Renovate titles a group branch `update tanstack to v5.104.1` when every member lands on one version and `update tanstack` otherwise, and the two shapes match different rules, so a draft can show one line of each. It's cosmetic. Merging them would mean one rule whose title drops the version from every grouped line. Past 5 lines (a group counts once), Dependencies collapses into a `<details>` block.
+- **Compare link**, from the shared `template`. It needs a previous release, which onboarding guarantees. It 404s while the release is a draft, because the tag only exists once the release is published.
 - **Footer**, from the consumer's own `.github/release-drafter.yml` (below).
 
 The HA add-ons' `promote` job turns this body into `CHANGELOG.md`: it links every number in `(#81, #85)`, drops the `<details>`/`<summary>` lines and the compare line, and keeps the headings and the summary. Any new markup in the body has to be handled there first (see CLAUDE.md).

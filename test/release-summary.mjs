@@ -204,9 +204,18 @@ console.log('\n[only drafts are written]');
 // Reads the titles with a regex rather than a YAML parser to stay
 // dependency-free; test/release-drafter.mjs owns the parsed view.
 // ---------------------------------------------------------------------------
-console.log('\n[release-drafter.yml category titles]');
+console.log('\n[release-drafter.yml]');
 {
   const yml = readFileSync(join(ROOT, 'release-drafter.yml'), 'utf8');
+  // The script stops counting at this line, and both HA `promote` seds delete
+  // it; a reworded compare line would silently break all three.
+  const STOP = "line.startsWith('**Full changelog:**')";
+  const template = /^template: \|\n((?:  .*\n|\n)+)/m.exec(yml)?.[1] ?? '';
+  check(
+    'the shared template has a `**Full changelog:**` line, and the script stops at that literal',
+    template.split('\n').some((l) => l.startsWith('  **Full changelog:** ')) && SRC.includes(STOP),
+    `template:\n${template}\nscript stop test present: ${SRC.includes(STOP)}\nChange the template, the script, test/release-summary.mjs COMPARE and both promote seds together.`,
+  );
   const titles = [...yml.matchAll(/^\s*- title: '([^']+)'$/gm)].map((m) => m[1]);
   check(
     'found six category titles',
