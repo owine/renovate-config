@@ -21,9 +21,17 @@ container (`.github/workflows/validate.yml`). Locally:
 npm i renovate && RENOVATE_DIST=./node_modules/renovate/dist node test/<name>.mjs
 ```
 
-Exit `2` means the Renovate dist moved (an image bump), not a config bug.
-Run every `test/*.mjs` that touches what you changed, plus
-`renovate-config-validator --strict`.
+Exit `1` is a behavior regression. Exit `2` means the test couldn't bind to
+what it checks, not a config bug: the Renovate dist moved (an image bump) or
+`RENOVATE_DIST` points at the wrong install, or, in `custom-managers.mjs`,
+the `customManagers` array was reordered. The message says which. Run every
+`test/*.mjs` that touches what you changed, plus the validator over every
+preset; with no arguments it checks only `renovate.json`:
+
+```sh
+renovate-config-validator --strict renovate.json default.json automerge.json \
+  node.json python.json docker.json mcp.json alpine.json home-assistant.json
+```
 
 ## Everything here is live on merge
 
