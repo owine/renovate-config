@@ -42,7 +42,9 @@ next push to `main`.
      version: `update all non-major dependencies`, `update toolchain-versions`.
   Titles keep their `deps:` prefix so the existing `change-title` replacers
   still strip it. `fix: … [security]` titles match neither rule and stay
-  ungrouped in Bug Fixes.
+  ungrouped in Bug Fixes. Hard-coding `deps:` drops any scope from a grouped
+  title; harmless because `default.json` sets no `semanticCommitScope`, so
+  Renovate titles have none. Revisit both templates if that changes.
 - Dependencies `collapse-after: 5` (was 10). Grouped entries count once.
 - `template`:
 
@@ -53,39 +55,60 @@ next push to `main`.
   ```
 
   `no-changes-template` is unchanged (`_No user-facing changes._`).
+  `$PREVIOUS_TAG` is empty when a repo has no previous release, which breaks
+  the link; every consumer has releases today, and onboarding already cuts a
+  first release by hand before adding release-drafter.
 
 ### 2. Summary line (per-repo workflow step)
 
 Each repo's `.github/workflows/release-drafter.yml` keeps its own job and gains
-one step after release-drafter: an `actions/github-script` step (SHA-pinned)
-that
+one step after release-drafter. Wiring:
 
-1. reads the release-drafter step's `id` and `body` outputs;
-2. returns early if the body is the no-changes template;
-3. counts entries per `## ` section (lines starting `- `, including those
-   inside `<details>`), plus entries before the first heading as "other";
-4. renders one line, in this order, singular/plural as needed, joined with
+- The release-drafter step gets `id: draft` (nut-cgi's has none today).
+- The new step is `actions/github-script` (SHA-pinned), guarded by
+  `if: steps.draft.outputs.id != ''` (a `dry-run` leaves no `id`).
+- The body arrives through `env: { BODY: ${{ steps.draft.outputs.body }} }`
+  and is read as `process.env.BODY`. Never interpolate `${{ }}` into
+  `script:`: PR titles with backticks or `${` would break the JS, and it is an
+  injection path. The id arrives the same way (`RELEASE_ID`).
+
+The script:
+
+1. counts entries per `## ` section (lines starting `- `, including those
+   inside `<details>`), plus entries before the first heading as "other", and
+   **stops at the `**Full changelog:**` line** so footer content (the MCP
+   block) is never counted;
+2. returns without writing if the total is 0. (The body is never exactly the
+   no-changes template, because the compare line and footer follow it.)
+3. renders one line, in this order, singular/plural as needed, joined with
    ` · `, omitting zero counts:
    breaking change(s), feature(s), bug fix(es), performance improvement(s),
    revert(s), dependency update(s), other change(s);
    e.g. `**1 bug fix · 4 dependency updates**`;
+4. fetches the release and returns unless it is still a draft (it may have
+   been published between the two steps);
 5. writes `<line>\n\n<body>` back with `repos.updateRelease`.
 
 Idempotent: release-drafter rewrites the body from scratch on every run, so
-the line never stacks. The job's existing `concurrency: release-drafter` keeps
-two runs from interleaving.
+the line never stacks. Consumers run with `cancel-in-progress: true`, so a run
+cancelled between the two steps leaves that draft without a summary until the
+next push; harmless.
 
 The canonical script is `scripts/release-summary.js` in renovate-config,
-covered by `test/release-summary.mjs`. Each repo's step carries an identical
-copy with a comment naming its source (`owine/renovate-config
-scripts/release-summary.js`). renovate-config never runs it in a workflow.
+covered by `test/release-summary.mjs`. It starts with the marker comment
+`// owine/renovate-config scripts/release-summary.js v1`; each repo's step
+carries an identical copy including that line, so drift is one
+`grep -r 'release-summary.js v'` across the fleet. Bump the version on every
+change. renovate-config never runs the script in a workflow.
 
 Optional highlight: when publishing, the human may add a sentence above the
-summary line. Published releases are never rewritten, so it persists.
+summary line. The step never writes to a published release, so it persists.
 
 ### 3. Per-repo footer (`.github/release-drafter.yml`)
 
 Each repo sets `footer:`, which overrides nothing shared (the base has none).
+release-drafter appends the footer directly after the template's trailing
+newline, so every `footer:` starts with an empty line.
 
 - Docker, retagged and MLB: a `sh` block with
   `docker pull ghcr.io/owine/<image>:$RESOLVED_VERSION`.
@@ -107,10 +130,27 @@ accept both the current and the new body:
 
 - link every `#N` inside a parenthesised list, so `(#486, #490)` becomes two
   links, not just a lone `(#123)`;
-- delete `<details>`, `</details>` and `<summary>…</summary>` lines;
+- delete `<details>`, `</details>` and `<summary>…</summary>` lines
+  (release-drafter puts each on its own line);
 - delete the `**Full changelog:**` line (each CHANGELOG heading already links
   the compare view);
 - keep emoji headings and the summary line (shown in HA's changelog view).
+
+Replace the existing `\(#N\)` link rule with this, and squeeze the blank
+lines the deletions leave (`| cat -s`). Tested on both an old-format and a
+new-format body; a `#12` inside a title is left alone:
+
+```sh
+sed -E -e 's/^(#+ )/#\1/' \
+  -e '/^<\/?details>$/d' -e '/^<summary>.*<\/summary>$/d' \
+  -e '/^\*\*Full changelog:\*\*/d' \
+  -e '/^- .*\(#[0-9]+(, #[0-9]+)*\)$/{' -e ':a' \
+  -e 's@([(]|, )#([0-9]+)([,)])@\1[#\2](https://github.com/'"$REPO"'/issues/\2)\3@' \
+  -e 'ta' -e '}' | cat -s
+```
+
+The link rule uses `@` as its delimiter on purpose: `$REPO` is
+`owner/name`, and its `/` would end a `s/…/…/` early.
 
 ## Rollout
 
