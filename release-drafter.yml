@@ -2,8 +2,10 @@
 #
 # Consumers load it from .github/release-drafter.yml with
 #   _extends: owine/renovate-config:/release-drafter.yml
-# and override only tag-prefix / tag-template / name-template, and only when
-# their tags aren't `vX.Y.Z`. See README "Releases: release-drafter".
+# and override only `footer` (their install snippet; the base sets none) and,
+# when their tags aren't `vX.Y.Z`, tag-prefix / tag-template / name-template.
+# Never a list key: `_extends` merges shallowly, so a consumer's `categories`
+# would replace this whole list. See README "Releases: release-drafter".
 #
 # Categories key off the Conventional Commit type in the PR TITLE. The fleet
 # squash-merges only, so the PR title is the commit subject, and for Renovate
@@ -11,6 +13,11 @@
 # The type -> section mapping reproduces release-please's, with one deliberate
 # change: perf and revert are shown fleet-wide. test/release-drafter.mjs
 # checks it against the types the presets assign.
+#
+# The body is also parsed downstream: the HA add-ons' `promote` job turns it
+# into CHANGELOG.md, and each consumer's summary step
+# (scripts/release-summary.js) counts its `- ` lines down to the
+# `**Full changelog:**` line. New markup here reaches both; see CLAUDE.md.
 
 name-template: 'v$RESOLVED_VERSION'
 tag-template: 'v$RESOLVED_VERSION'
@@ -18,10 +25,34 @@ tag-template: 'v$RESOLVED_VERSION'
 # whose tags don't start with `v` must override this too, or the draft
 # starts from no previous release.
 tag-prefix: 'v'
-change-template: '- $TITLE (#$NUMBER)'
+# $NUMBERS is `#123` for a single change and `#123, #130` for a group, so an
+# ungrouped line renders exactly as `(#$NUMBER)` did.
+change-template: '- $TITLE ($NUMBERS)'
 no-changes-template: '_No user-facing changes._'
+# $PREVIOUS_TAG is empty in a repo with no release yet, which breaks the
+# link; onboarding cuts the first release by hand, so every consumer has one.
 template: |
   $CHANGES
+
+  **Full changelog:** [$PREVIOUS_TAG...$RESOLVED_TAG](https://github.com/$OWNER/$REPOSITORY/compare/$PREVIOUS_TAG...$RESOLVED_TAG)
+
+# One line per dependency instead of one per bump. Matched against the raw PR
+# title, before the replacers, within each category; the first matching rule
+# wins and a group of one keeps its own title. The templates keep the `deps:`
+# prefix so the replacers below strip it like any other line. Hard-coding it
+# drops a scope, which Renovate titles don't carry (no semanticCommitScope in
+# default.json); revisit both templates if that changes. A `fix: … [security]`
+# title matches neither rule and stays its own Bug Fixes line.
+group-changes:
+  # `update pnpm to v12.3.5`, `update dependency ws to v8.22.0`,
+  # `update curl apk package to v8.23.0-r0`, `update … docker digest to abc1234`,
+  # and versioned group branches (`update sentry to v10.30.0`).
+  - pattern: '/^deps(?:\([^)]*\))?: update (?<group>.+?) to (?<to>\S+)$/'
+    title-template: 'deps: update $GROUP to $LAST_TO'
+  # Group branches with no version: `update all non-major dependencies`,
+  # `update toolchain-versions`.
+  - pattern: '/^deps(?:\([^)]*\))?: (?<group>update .+)$/'
+    title-template: 'deps: $GROUP'
 
 categories:
   # release-please's hidden types: no changelog line, no version bump.
@@ -33,30 +64,31 @@ categories:
         types: [chore, ci, docs, test, refactor, build, style]
         breaking: false
 
-  - title: '⚠ Breaking Changes'
+  - title: '💥 Breaking Changes'
     semver-increment: major
     exclusive: true
     when: { conventional: { breaking: true } }
 
-  - title: Features
+  - title: '✨ Features'
     semver-increment: minor
     exclusive: true
     when: { conventional: { type: feat } }
 
-  - title: Bug Fixes
+  - title: '🐛 Bug Fixes'
     exclusive: true
     when: { conventional: { type: fix } }
 
-  - title: Performance
+  - title: '⚡ Performance'
     exclusive: true
     when: { conventional: { type: perf } }
 
-  - title: Reverts
+  - title: '⏪ Reverts'
     exclusive: true
     when: { conventional: { type: revert } }
 
-  - title: Dependencies
-    collapse-after: 10
+  - title: '📦 Dependencies'
+    # Counts grouped entries once.
+    collapse-after: 5
     when: { conventional: { type: deps } }
 
   # Fallback: anything still included is at least a patch.

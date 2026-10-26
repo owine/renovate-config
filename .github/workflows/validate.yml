@@ -55,6 +55,13 @@ jobs:
       - name: Test release-drafter categories
         run: node test/release-drafter.mjs
 
+      # Every consumer runs a copy of scripts/release-summary.js after
+      # release-drafter; nothing here runs it for real. Runs it the way
+      # actions/github-script does, against a mock octokit: it must count only
+      # the changes above the compare line and write only to a draft.
+      - name: Test release summary script
+        run: node test/release-summary.mjs
+
       - name: Validate Renovate presets
         run: |
           renovate-config-validator --strict \
