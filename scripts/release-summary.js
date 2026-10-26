@@ -8,8 +8,10 @@
 // (README, "Summary line"). github-script runs it as an async function with
 // `github`, `context` and `core` in scope, so top-level await/return work.
 // The body and the release id arrive through `env:` (BODY, RELEASE_ID), never
-// `${{ }}` inside the script: a PR title with a backtick or `${` would break
-// the JS, and it is an injection path.
+// as an Actions expression inside the script: a PR title with a backtick or
+// `${` would break the JS, and it is an injection path. Actions evaluates
+// expressions anywhere in `script:`, comments included, so this file must
+// never contain the expression opener at all (the test checks).
 //
 // Each consumer carries an identical copy, this marker line included, so
 // `grep -r 'release-summary.js v'` finds drift. Bump the version on every

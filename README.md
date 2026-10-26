@@ -189,7 +189,8 @@ The HA add-ons' `promote` job turns this body into `CHANGELOG.md`: it links ever
         with:
           commitish: main
       # Prepends the entry counts to the draft. A dry run leaves no id, so it
-      # skips itself. Body and id arrive through env, never ${{ }} in script:.
+      # skips itself. Body and id arrive through env, never as an expression
+      # inside script: (see the script header).
       - if: steps.draft.outputs.id != ''
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:

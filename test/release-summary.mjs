@@ -93,6 +93,14 @@ check(
   SRC.startsWith('// owine/renovate-config scripts/release-summary.js v'),
   `first line: ${JSON.stringify(SRC.split('\n')[0])}\nEvery consumer's copy is found by grepping that line.`,
 );
+{
+  const at = SRC.split('\n').findIndex((l) => l.includes('${{'));
+  check(
+    'contains no Actions expression opener, not even in a comment',
+    at === -1,
+    `line ${at + 1}: ${JSON.stringify(SRC.split('\n')[at])}\nActions evaluates expressions anywhere in a \`with:\` value, so this fails the\nconsumer's workflow at parse time ("An expression was expected").`,
+  );
+}
 
 console.log('\n[nothing to summarize]');
 await expectUntouched('no-changes body', body('_No user-facing changes._'));
