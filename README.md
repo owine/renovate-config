@@ -69,8 +69,16 @@ the second checks that no group mixes a hidden type (`ci:`, `chore:`) with `deps
 the shared `release-drafter.yml` shows every commit type the presets release
 on and pre-excludes the hidden ones, and that a preset assigning a new type
 fails until someone decides where it goes (see Releases: release-drafter
-below). It parses the YAML with the Renovate dist's own parser, and mirrors
-release-drafter's category matching rather than installing release-drafter.
+below). It also checks the `group-changes` rules against one real title per
+Renovate shape (versioned, `dependency`-prefixed, apk, docker digest, group
+branch), and that a `[security]` fix never groups. It parses the YAML with the
+Renovate dist's own parser, and mirrors release-drafter's category matching
+and grouping rather than installing release-drafter.
+
+`test/release-summary.mjs` is plain node with no dependencies. It runs
+`scripts/release-summary.js` the way `actions/github-script` does, against a
+mock octokit, and checks that it counts only the entries above the compare line
+and writes only to a draft that has something to count.
 
 Exit codes: `0` pass, `1` a behavior regression, `2` the Renovate dist moved
 (a layout problem, not a config one — likely an image bump).
@@ -122,12 +130,12 @@ The draft sorts merged PRs by the Conventional Commit type of the **PR title**. 
 
 | PR title type | Section | Version bump |
 |---|---|---|
-| any single-word type with `!` **in the title** (`feat!:`, `fix(api)!:`, `chore!:`) | ⚠ Breaking Changes | major |
-| `feat` | Features | minor |
-| `fix` | Bug Fixes | patch |
-| `perf` | Performance | patch |
-| `revert` | Reverts | patch |
-| `deps` | Dependencies (collapsed past 10 entries) | patch |
+| any single-word type with `!` **in the title** (`feat!:`, `fix(api)!:`, `chore!:`) | 💥 Breaking Changes | major |
+| `feat` | ✨ Features | minor |
+| `fix` | 🐛 Bug Fixes | patch |
+| `perf` | ⚡ Performance | patch |
+| `revert` | ⏪ Reverts | patch |
+| `deps` | 📦 Dependencies (repeat bumps share a line, collapsed past 5 lines) | patch |
 | `chore`, `ci`, `docs`, `test`, `refactor`, `build`, `style` | hidden | none |
 | anything else (unknown type, non-conventional title) | listed unsectioned at the top | patch |
 
@@ -135,10 +143,83 @@ The draft sorts merged PRs by the Conventional Commit type of the **PR title**. 
 
 **How it differs from release-please:**
 - **A draft always exists.** If only hidden types merged since the last release, the draft reads `_No user-facing changes._` with a patch version, where release-please opened no PR. Don't publish that draft.
-- **Lines link PRs (`#123`), not commit SHAs.**
+- **Lines link PRs (`#123`, or `#81, #85` for a grouped dependency), not commit SHAs.**
 - **Only the title's `!` marks a breaking change.** release-drafter parses the PR title alone. A `BREAKING CHANGE:` footer in the PR body, which release-please read from the squash commit body, is ignored: `feat: x` with that footer drafts a minor, not a major. Put the `!` in the title.
 - **Non-conventional titles show up.** release-please ignored them; release-drafter lists them unsectioned and bumps patch.
 - **No `bump-minor-pre-major`.** In a `0.x` repo, a breaking change drafts `1.0.0`, where release-please may have drafted `0.(x+1).0`.
+
+### What a draft looks like
+
+````markdown
+**1 bug fix · 3 dependency updates**
+
+## 🐛 Bug Fixes
+
+- **api:** handle an empty camera list (#88)
+
+## 📦 Dependencies
+
+- update dependency undici to v8.0.0 (#81, #85, #90)
+- update curl apk package to v8.23.0-r0 (#84)
+- update all non-major dependencies (#83, #89)
+
+**Full changelog:** [v1.4.0...v1.4.1](https://github.com/owine/<repo>/compare/v1.4.0...v1.4.1)
+
+### Use this release
+
+```sh
+docker pull ghcr.io/owine/<repo>:1.4.1
+```
+````
+
+From the top:
+
+- **Summary line**, written by each consumer's summary step (below), not by release-drafter.
+- **Sections**, from the shared config. Renovate bumps of one dependency share a line: the `group-changes` rules match the raw PR title, the line takes the version of the newest merged PR, and it lists every PR number. `update dependency X to …`, `update X apk package to …`, `update X docker digest to …` and a group branch such as `update all non-major dependencies` each fold into one line. A `fix: … [security]` line is never grouped. One known split: Renovate titles a group branch `update tanstack to v5.104.1` when every member lands on one version and `update tanstack` otherwise, and the two shapes match different rules, so a draft can show one line of each. It's cosmetic. Merging them would mean one rule whose title drops the version from every grouped line. Past 5 lines (a group counts once), Dependencies collapses into a `<details>` block.
+- **Compare link**, from the shared `template`. It needs a previous release, which onboarding guarantees. It 404s while the release is a draft, because the tag only exists once the release is published.
+- **Footer**, from the consumer's own `.github/release-drafter.yml` (below).
+
+The HA add-ons' `promote` job turns this body into `CHANGELOG.md`: it links every number in `(#81, #85)`, drops the `<details>`/`<summary>` lines and the compare line, and keeps the headings and the summary. Any new markup in the body has to be handled there first (see CLAUDE.md).
+
+**Summary line.** Each consumer's `.github/workflows/release-drafter.yml` gives the release-drafter step `id: draft` and follows it with this step:
+
+```yaml
+      - id: draft
+        uses: release-drafter/release-drafter@978bb0b30c5ee8cdd332ced253758157150d43f0 # v7.10.0
+        with:
+          commitish: main
+      # Prepends the entry counts to the draft. A dry run leaves no id, so it
+      # skips itself. Body and id arrive through env, never as an expression
+      # inside script: (see the script header).
+      - if: steps.draft.outputs.id != ''
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          BODY: ${{ steps.draft.outputs.body }}
+          RELEASE_ID: ${{ steps.draft.outputs.id }}
+        with:
+          script: |
+            // owine/renovate-config scripts/release-summary.js v1
+            // …the rest of scripts/release-summary.js, verbatim
+```
+
+The `script:` is a verbatim copy of [`scripts/release-summary.js`](scripts/release-summary.js), marker comment included, so `grep -r 'release-summary.js v'` across the fleet shows which version each repo runs. The canonical copy lives here, covered by `test/release-summary.mjs`; bump the marker on every change and roll the copy out. The step counts the `- ` lines under each heading down to the `**Full changelog:**` line, so footer lines never count. It writes nothing when there is nothing to count, and nothing to a release that was published between the two steps. release-drafter rewrites the body on every run, so the line never stacks. A sentence a human adds above it before publishing stays, since the step never touches a published release.
+
+**Footer.** Each consumer sets `footer:` in its `.github/release-drafter.yml`: a "use this release" snippet for its own shape. The base sets no footer, so this overrides nothing shared. release-drafter appends it directly after the template, so the block starts with an empty line (truly empty, with no spaces past the block's indentation, or the YAML won't parse), then a `### Use this release` heading:
+
+````yaml
+_extends: owine/renovate-config:/release-drafter.yml
+footer: |
+
+  ### Use this release
+
+  ```sh
+  docker pull ghcr.io/owine/doc-scanner:$RESOLVED_VERSION
+  ```
+````
+
+- **Docker images** (retagged, and MLB-Deferred-Contract-Calculator): a `docker pull ghcr.io/owine/<image>:$RESOLVED_VERSION` block. nut-cgi pulls `:v$RESOLVED_VERSION`, since its image tags keep the `v`. trip-tracker's image is private, so its pull assumes a GHCR login.
+- **npm MCPs**: a `json` MCP client config with `"args": ["-y", "@owine/<pkg>@$RESOLVED_VERSION"]` and only the required env (`*_HOST`, `*_API_KEY`), then one line linking the README for optional settings.
+- **HA add-ons**: no footer. Home Assistant offers its own update.
 
 ### Onboarding a repo
 
@@ -169,7 +250,7 @@ a. Add `.github/release-drafter.yml`:
    name-template: '$RESOLVED_VERSION'
    ```
 
-   Override nothing else; categories and replacers stay shared. The `_extends` is read with the workflow's `GITHUB_TOKEN`, which only works because this repo is public.
+   Besides those, set only `footer:` (see Footer above). Categories, replacers and `group-changes` stay shared: `_extends` merges top-level keys, so setting any of them replaces the whole shared list. The `_extends` is read with the workflow's `GITHUB_TOKEN`, which only works because this repo is public.
 
 b. Add `.github/workflows/release-drafter.yml`:
 
@@ -195,9 +276,11 @@ b. Add `.github/workflows/release-drafter.yml`:
          contents: write
          pull-requests: read
        steps:
-         - uses: release-drafter/release-drafter@978bb0b30c5ee8cdd332ced253758157150d43f0 # v7.10.0
+         - id: draft
+           uses: release-drafter/release-drafter@978bb0b30c5ee8cdd332ced253758157150d43f0 # v7.10.0
            with:
              commitish: main
+         # …then the summary step (see Summary line above)
    ```
 
    It uses the default `GITHUB_TOKEN`, with no App token. Writing a draft triggers nothing downstream. When a human publishes the draft in the UI, `release: published` fires as that human, so downstream workflows run. (A release *published* by `GITHUB_TOKEN` would not trigger them, so never set `publish: true` here.)

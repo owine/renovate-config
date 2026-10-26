@@ -132,8 +132,8 @@ const classify = (title) => {
 // release consequence is decided on purpose rather than by the fallback.
 // ---------------------------------------------------------------------------
 const PRESET_TYPES = {
-  deps: { hidden: false, section: 'Dependencies', bump: 'patch' },
-  fix: { hidden: false, section: 'Bug Fixes', bump: 'patch' }, // vulnerabilityAlerts
+  deps: { hidden: false, section: '📦 Dependencies', bump: 'patch' },
+  fix: { hidden: false, section: '🐛 Bug Fixes', bump: 'patch' }, // vulnerabilityAlerts
   ci: { hidden: true }, // Actions + workflow literals
   chore: { hidden: true }, // lock file maintenance, mcp.json dev-only
 };
@@ -171,16 +171,16 @@ for (const t of [...assigned].sort())
 
 // The rest of release-please's mapping, which human-written PR titles rely on.
 console.log("\n[release-please's mapping, harmonized]");
-expectTitle('feat: add list_cameras', { hidden: false, section: 'Features', bump: 'minor' }, 'feat is a minor');
-expectTitle('feat(tools): add list_cameras', { hidden: false, section: 'Features', bump: 'minor' }, 'scope does not matter');
-expectTitle('perf: cache lookups', { hidden: false, section: 'Performance', bump: 'patch' }, 'shown fleet-wide (harmonized)');
-expectTitle('revert: "feat: add x"', { hidden: false, section: 'Reverts', bump: 'patch' }, 'shown fleet-wide (harmonized)');
+expectTitle('feat: add list_cameras', { hidden: false, section: '✨ Features', bump: 'minor' }, 'feat is a minor');
+expectTitle('feat(tools): add list_cameras', { hidden: false, section: '✨ Features', bump: 'minor' }, 'scope does not matter');
+expectTitle('perf: cache lookups', { hidden: false, section: '⚡ Performance', bump: 'patch' }, 'shown fleet-wide (harmonized)');
+expectTitle('revert: "feat: add x"', { hidden: false, section: '⏪ Reverts', bump: 'patch' }, 'shown fleet-wide (harmonized)');
 for (const t of ['docs', 'test', 'refactor', 'build', 'style'])
   expectTitle(`${t}: tidy`, { hidden: true }, "release-please's other hidden types");
-expectTitle('feat!: drop v1 API', { hidden: false, section: '⚠ Breaking Changes', bump: 'major' }, 'breaking is major, and only in Breaking');
-expectTitle('fix(api)!: drop v1 endpoint', { hidden: false, section: '⚠ Breaking Changes', bump: 'major' }, 'scoped breaking fix');
-expectTitle('chore!: drop Node 20', { hidden: false, section: '⚠ Breaking Changes', bump: 'major' }, 'a breaking hidden type still releases, as in release-please');
-expectTitle('ci!: require ubuntu-26.04', { hidden: false, section: '⚠ Breaking Changes', bump: 'major' }, 'same for ci!');
+expectTitle('feat!: drop v1 API', { hidden: false, section: '💥 Breaking Changes', bump: 'major' }, 'breaking is major, and only in Breaking');
+expectTitle('fix(api)!: drop v1 endpoint', { hidden: false, section: '💥 Breaking Changes', bump: 'major' }, 'scoped breaking fix');
+expectTitle('chore!: drop Node 20', { hidden: false, section: '💥 Breaking Changes', bump: 'major' }, 'a breaking hidden type still releases, as in release-please');
+expectTitle('ci!: require ubuntu-26.04', { hidden: false, section: '💥 Breaking Changes', bump: 'major' }, 'same for ci!');
 
 // ---------------------------------------------------------------------------
 // Replacers strip the type prefix the way release-please's changelog did
@@ -188,6 +188,17 @@ expectTitle('ci!: require ubuntu-26.04', { hidden: false, section: '⚠ Breaking
 // release-drafter compiles `/re/flags` strings to a RegExp and uses VS Code's
 // `$1` replacement syntax, which agrees with String.replace for plain `$n`.
 // ---------------------------------------------------------------------------
+// The HA `promote` seds link `#N` only in an entry's trailing `(#N, #M)`
+// list, and scripts/release-summary.js counts `- ` lines: both read the shape
+// change-template renders. An unknown variable (`$NUMBER` typo'd) renders as
+// literal text, so nothing else would catch it.
+console.log('\n[change-template]');
+check(
+  `change-template ${JSON.stringify(config['change-template'])} is a \`- \` line ending in the \`($NUMBERS)\` list`,
+  /^- .*\(\$NUMBERS\)$/.test(config['change-template'] ?? ''),
+  'promote links PR numbers only in a trailing `(#N, #M)` list; update both promote seds first',
+);
+
 console.log('\n[change-title replacers]');
 const toRegex = (s) => {
   const m = /^\/(.+)\/([gimsuy]*)$/s.exec(s);
@@ -205,6 +216,118 @@ for (const [title, want] of [
 ]) {
   const got = render(title);
   check(`${JSON.stringify(title)} renders ${JSON.stringify(want)}`, got === want, `got ${JSON.stringify(got)}`);
+}
+
+// ---------------------------------------------------------------------------
+// group-changes folds repeat Renovate bumps into one line per dependency
+//
+// Mirrors packages/core/src/release/group-changes.ts @ v7.10.0: the first
+// rule whose pattern matches the RAW title (before the replacers) with a
+// non-blank `group` capture wins; changes group when the rule and every
+// `group`/`group_*` value agree; a group of two or more takes title-template,
+// with $GROUP from the newest member and $FIRST_/$LAST_<NAME> for the other
+// captures. The replacers then run on that title like on any other.
+// Fixture titles are real fleet Renovate titles, one per shape.
+// ---------------------------------------------------------------------------
+console.log('\n[group-changes]');
+const isGroupName = (name) => /^group(_|$)/i.test(name);
+const captureNames = (re) => Object.keys(new RegExp(`|${re.source}`, re.flags).exec('').groups ?? {});
+const groupRules = (config['group-changes'] ?? []).map((rule) => {
+  const re = toRegex(rule.pattern);
+  // release-drafter drops g/y so exec() keeps no lastIndex between titles.
+  return { ...rule, re: new RegExp(re.source, re.flags.replace(/[gy]/g, '')) };
+});
+for (const rule of groupRules) {
+  const names = captureNames(rule.re);
+  // release-drafter leaves an unknown $VAR in the title as literal text.
+  const known = new Set([
+    ...names.filter(isGroupName).map((n) => `$${n.toUpperCase()}`),
+    ...names.filter((n) => !isGroupName(n)).flatMap((n) => [`$FIRST_${n.toUpperCase()}`, `$LAST_${n.toUpperCase()}`]),
+  ]);
+  const used = rule['title-template'].match(/\$[A-Z_]+/g) ?? [];
+  check(
+    `${rule.pattern} is a regex literal with a \`group\` capture, and its title-template uses only its captures`,
+    /^\/.+\/[gimsuy]*$/.test(rule.pattern) && names.some(isGroupName) && used.every((v) => known.has(v)),
+    `captures: ${names.join(', ') || '(none)'}; title-template uses ${used.join(', ')}; available ${[...known].join(', ')}`,
+  );
+}
+const groupKey = (title) => {
+  for (const [index, rule] of groupRules.entries()) {
+    const groups = rule.re.exec(title)?.groups;
+    if (!groups) continue;
+    const values = Object.keys(groups).filter(isGroupName).map((n) => groups[n] ?? '');
+    if (values.some((v) => v.trim())) return { index, rule, value: values.join(' / '), key: `${index} ${JSON.stringify(values)}` };
+  }
+  return null;
+};
+// One rendered changelog title for titles merged oldest-first, or null if
+// they would not share a line.
+const entry = (titles) => {
+  const keys = titles.map(groupKey);
+  if (titles.length > 1 && !keys.every((k) => k && k.key === keys[0].key)) return null;
+  if (titles.length === 1) return render(titles[0]);
+  const { rule } = keys[0];
+  const [oldest, newest] = [rule.re.exec(titles[0]).groups, rule.re.exec(titles.at(-1)).groups];
+  const vars = {};
+  for (const n of Object.keys(newest)) {
+    if (isGroupName(n)) vars[`$${n.toUpperCase()}`] = newest[n] ?? '';
+    else Object.assign(vars, { [`$FIRST_${n.toUpperCase()}`]: oldest[n] ?? '', [`$LAST_${n.toUpperCase()}`]: newest[n] ?? '' });
+  }
+  return render(rule['title-template'].replace(/\$[A-Z_]+/g, (v) => vars[v] ?? v));
+};
+
+for (const [title, rule, value] of [
+  ['deps: update pnpm to v12.3.5', 0, 'pnpm'],
+  ['deps: update dependency lucide-react to v1.58.0', 0, 'dependency lucide-react'],
+  ['deps: update curl apk package to v8.23.0-r0', 0, 'curl apk package'],
+  ['deps: update ghcr.io/home-assistant/base:3.24 docker digest to 992dc6a', 0, 'ghcr.io/home-assistant/base:3.24 docker digest'],
+  ['deps: update sentry to v10.30.0', 0, 'sentry'],
+  ['deps: update all non-major dependencies', 1, 'update all non-major dependencies'],
+  ['deps: update toolchain-versions', 1, 'update toolchain-versions'],
+]) {
+  const got = groupKey(title);
+  check(
+    `${JSON.stringify(title)} groups by rule ${rule + 1} on ${JSON.stringify(value)}`,
+    got?.index === rule && got.value === value,
+    `got ${got ? `rule ${got.index + 1} on ${JSON.stringify(got.value)}` : 'no group'}`,
+  );
+}
+for (const [title, why] of [
+  ['fix: update dependency happy-dom to v21.0.4 [security]', 'a security fix stays its own Bug Fixes line'],
+  ['ci: update pnpm/setup action to v1.2.0', 'hidden anyway; only `deps:` titles are grouped'],
+  ['feat: update the dashboard', 'human titles are never grouped'],
+]) {
+  const got = groupKey(title);
+  check(`${JSON.stringify(title)} matches no rule — ${why}`, got === null, `grouped by rule ${got?.index + 1} on ${JSON.stringify(got?.value)}`);
+}
+
+for (const [titles, want, why] of [
+  [['deps: update pnpm to v12.3.5', 'deps: update pnpm to v12.3.6'], 'update pnpm to v12.3.6', 'the newest version wins'],
+  [
+    ['deps: update dependency undici to v7.17.0', 'deps: update dependency undici to v8.0.0'],
+    'update dependency undici to v8.0.0',
+    'a major and a minor of one package share a line',
+  ],
+  [
+    ['deps: update ghcr.io/home-assistant/base:3.24 docker digest to 1a2b3c4', 'deps: update ghcr.io/home-assistant/base:3.24 docker digest to 992dc6a'],
+    'update ghcr.io/home-assistant/base:3.24 docker digest to 992dc6a',
+    'digest rebuilds of one tag',
+  ],
+  [['deps: update all non-major dependencies', 'deps: update all non-major dependencies'], 'update all non-major dependencies', 'weekly group branch'],
+  [['deps: update dependency vite to v8.1.2', 'deps: update dependency vitest to v4.0.0'], null, 'different packages stay apart'],
+  [['deps: update python docker tag to v3.14.1', 'deps: update dependency python to v3.14.1'], null, 'the image and the runtime stay apart'],
+  [
+    ['deps: update ghcr.io/home-assistant/base:3.24 docker digest to 1a2b3c4', 'deps: update ghcr.io/home-assistant/base:3.25 docker digest to 992dc6a'],
+    null,
+    'digests of different tags stay apart',
+  ],
+]) {
+  const got = entry(titles);
+  check(
+    `${titles.map((t) => JSON.stringify(t)).join(' + ')} -> ${want === null ? 'separate lines' : JSON.stringify(want)} — ${why}`,
+    got === want,
+    `got ${got === null ? 'separate lines' : JSON.stringify(got)}`,
+  );
 }
 
 if (failures.length) {
