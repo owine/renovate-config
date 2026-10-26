@@ -85,9 +85,21 @@ The script:
    breaking change(s), feature(s), bug fix(es), performance improvement(s),
    revert(s), dependency update(s), other change(s);
    e.g. `**1 bug fix · 4 dependency updates**`;
-4. fetches the release and returns unless it is still a draft (it may have
-   been published between the two steps);
-5. writes `<line>\n\n<body>` back with `repos.updateRelease`.
+4. fetches the release with `github.rest.repos.getRelease({ ...context.repo,
+   release_id: Number(process.env.RELEASE_ID) })` and returns unless
+   `draft` is true (it may have been published between the two steps);
+5. writes `<line>\n\n<body>` back with `github.rest.repos.updateRelease`
+   (same `release_id`).
+
+Form: `scripts/release-summary.js` is written as the body of an
+`actions/github-script` inline `script:`, which runs as an async function
+with `github`, `context` and `core` in scope and allows top-level
+`await`/`return`. Detect the stop line with `startsWith('**Full changelog:**')`.
+`test/release-summary.mjs` reads the file and runs it the same way,
+`new AsyncFunction('github', 'context', 'core', 'process', src)`, with a mock
+octokit that records `updateRelease` calls and a fake `process.env`. A
+`dry-run` has no release id, so render checks outside a real draft run the
+script locally with those mocks.
 
 Idempotent: release-drafter rewrites the body from scratch on every run, so
 the line never stacks. Consumers run with `cancel-in-progress: true`, so a run
@@ -108,7 +120,9 @@ summary line. The step never writes to a published release, so it persists.
 
 Each repo sets `footer:`, which overrides nothing shared (the base has none).
 release-drafter appends the footer directly after the template's trailing
-newline, so every `footer:` starts with an empty line.
+newline, so every `footer: |` starts with an empty line (truly empty: no
+spaces beyond the block's indentation, or the YAML won't parse). Every
+footer opens with a `### Use this release` heading.
 
 - Docker, retagged and MLB: a `sh` block with
   `docker pull ghcr.io/owine/<image>:$RESOLVED_VERSION`.
@@ -180,7 +194,8 @@ repos' next push.
   body (grouped numbers, `<details>`, compare line, summary), as #467 did.
 - nut-cgi pilot: `workflow_dispatch`; because its draft is currently empty,
   also replay an old release range with `dry-run: true` and run the summary
-  script on that output to see a full render.
+  script locally (the test's mocks) on that would-be body to see a full
+  render. A dry run has no release id, so the workflow step skips itself.
 
 ## Out of scope
 
