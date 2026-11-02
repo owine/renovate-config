@@ -146,10 +146,27 @@ sameUpdateTypes("the dev group takes the same update types as automerge.json's b
 // Behavioral: route real-shaped upgrades through the full rule chain
 //
 // Built-in rules first (config:best-practices pulls in
-// :semanticPrefixFixDepsChoreOthers, the `* => chore` this fleet overrides),
-// then the presets in each consumer's extends order.
+// :semanticPrefixFixDepsChoreOthers, the `* => chore` this fleet overrides,
+// and workarounds:typesNodeVersioning, which node.json's @types/node rule
+// relies on), then the presets in each consumer's extends order.
+//
+// resolveConfigPresets returns { config, visitedPresets }. Reading
+// `.packageRules` off the top level silently yielded [] and ran every case
+// without the built-ins, so an empty result is a binding failure (exit 2),
+// never a pass.
 // ---------------------------------------------------------------------------
-const builtin = (await resolveConfigPresets({ extends: defaults.extends })).packageRules ?? [];
+const resolved = await resolveConfigPresets({ extends: defaults.extends });
+const builtin = resolved?.config?.packageRules ?? [];
+if (!builtin.length) {
+  console.error(
+    `\nResolved default.json's extends (${defaults.extends.join(', ')}) but got no\n` +
+      `built-in packageRules (top-level keys: ${Object.keys(resolved ?? {}).join(', ') || 'none'}).\n\n` +
+      `This is a LAYOUT problem, not a config problem: resolveConfigPresets in the\n` +
+      `Renovate release at ${DIST} changed its return shape. Repoint the read above\n` +
+      `and re-run.\n`,
+  );
+  process.exit(2);
+}
 const rulesFor = (files) => [...builtin, ...files.flatMap((f) => preset(f).packageRules ?? [])];
 
 // A vulnerable dep gets the rule Renovate builds in init/vulnerability.ts and
