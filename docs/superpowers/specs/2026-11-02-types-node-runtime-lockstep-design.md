@@ -96,7 +96,7 @@ rule's description so nobody "fixes" it.
 
 Line 152 reads `(await resolveConfigPresets({ extends: defaults.extends })).packageRules`.
 In 44.199.0 `resolveConfigPresets` returns `{ config, visitedPresets }`, so
-that is `undefined` and `builtin` is `[]`: all 752 built-in rules, including the
+that is `undefined` and `builtin` is `[]`: every built-in rule (~750), including the
 `:semanticPrefixFixDepsChoreOthers` `* → chore` rule the comment above it says
 it loads, have been silently missing.
 
