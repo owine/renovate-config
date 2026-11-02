@@ -17,8 +17,9 @@
 ## Conventions for every task
 
 - Repo root: `/Users/owine/Git/renovate-config`. Run all commands from there.
-- `RENOVATE_DIST` for local runs (Homebrew install, same major as CI's image):
-  `export RENOVATE_DIST=/opt/homebrew/Cellar/renovate/44.199.0/libexec/lib/node_modules/renovate/dist`
+- `RENOVATE_DIST` for local runs (Homebrew install, same major as CI's image). Each shell call starts fresh, so an `export` does NOT carry over: set it inline on every test command, i.e. every `node test/…` and `node --input-type=module …` below is run as
+  `RENOVATE_DIST=/opt/homebrew/Cellar/renovate/44.199.0/libexec/lib/node_modules/renovate/dist node test/commit-types.mjs`.
+  Without it the test falls back to `/usr/local/renovate/dist` and exits 2.
 - The shell prints an `fnm` warning and sometimes `error: Requested version v24.22.2 is not currently installed` before every command. It is noise from the repo's `.nvmrc`; ignore it. `node` itself still runs.
 - Test exit codes (CLAUDE.md): `0` pass, `1` behavior regression, `2` the test could not bind to Renovate's dist.
 - Validator command (all nine presets; ignore the `re2` stack trace it prints, it ends with `Config validated successfully`):
@@ -203,7 +204,7 @@ In the **mcp** consumer's `cases`, directly after the `'.nvmrc node is dev-only'
 - [ ] **Step 2: Run to verify the majors fail**
 
 Run: `node test/commit-types.mjs; echo "exit=$?"`
-Expected: exactly 2 failures, both `@types/node [major devDependencies]`, each `expected {"group":"toolchain-versions",…}, got {"group":undefined,…}` (ungrouped today). The app patch case passes. `exit=1`.
+Expected: exactly 2 failures, both `@types/node [major devDependencies]`: app `expected {"group":"toolchain-versions","type":"deps"}, got {"type":"deps"}`, mcp `… got {"type":"chore"}` (no `group` key: it is ungrouped today and `JSON.stringify` drops `undefined`). The app patch case passes. `exit=1`.
 
 - [ ] **Step 3: Add the rule to `node.json`**
 
@@ -293,6 +294,8 @@ CLAUDE.md: everything here is live on merge, so prove the branch mapping against
 
 **Files:** none in the repo. Scratch dir: `/private/tmp/claude-501/-Users-owine-Git-renovate-config/ae7c2c86-1c5f-41fd-aeae-485b04c639ed/scratchpad/types-node-fixture`
 
+**SAFETY:** each step below is ONE self-contained shell command that sets its own `F`/`B` and `cd`s into the fixture first, and aborts if the `cd` fails. Never run Step 4's `sed`/`git commit`/`rm` without that guard: in the repo root it would rewrite the real `renovate.json` and commit on the feature branch.
+
 - [ ] **Step 1: Push the branch**
 
 Run: `git push -u origin feat/types-node-runtime-lockstep`
@@ -318,7 +321,9 @@ git init -q && git add -A && git -c user.email=f@x -c user.name=f commit -qm fix
 - [ ] **Step 3: Run with the branch presets**
 
 ```sh
-cd "$F" && LOG_LEVEL=debug RENOVATE_TOKEN=$(gh auth token) GITHUB_COM_TOKEN=$(gh auth token) \
+F=/private/tmp/claude-501/-Users-owine-Git-renovate-config/ae7c2c86-1c5f-41fd-aeae-485b04c639ed/scratchpad/types-node-fixture
+cd "$F" || exit 1
+LOG_LEVEL=debug RENOVATE_TOKEN=$(gh auth token) GITHUB_COM_TOKEN=$(gh auth token) \
   RENOVATE_CACHE_DIR="$F/.cache" renovate --platform=local --dry-run=full > branch.log 2>&1
 awk '/"depName":/{gsub(/[",]/,"");d=$2} /"updateType":/{gsub(/[",]/,"");u=$2} /"branchName":/{gsub(/[",]/,"");print d"  ["u"]  -> "$2}' branch.log | sort -u
 ```
@@ -333,12 +338,16 @@ If the awk output is empty, check `branch.log` for `Config fetched` / preset err
 - [ ] **Step 4: Control run against `main`**
 
 ```sh
-cd "$F" && sed -i '' "s|#$B||g" renovate.json && git commit -qam control && rm -rf .cache
+F=/private/tmp/claude-501/-Users-owine-Git-renovate-config/ae7c2c86-1c5f-41fd-aeae-485b04c639ed/scratchpad/types-node-fixture
+B=feat/types-node-runtime-lockstep
+cd "$F" || exit 1
+[ "$(pwd)" = "$F" ] || exit 1
+sed -i '' "s|#$B||g" renovate.json && git commit -qam control && rm -rf .cache
 LOG_LEVEL=debug RENOVATE_TOKEN=$(gh auth token) GITHUB_COM_TOKEN=$(gh auth token) \
   RENOVATE_CACHE_DIR="$F/.cache" renovate --platform=local --dry-run=full > control.log 2>&1
 awk '/"depName":/{gsub(/[",]/,"");d=$2} /"updateType":/{gsub(/[",]/,"");u=$2} /"branchName":/{gsub(/[",]/,"");print d"  ["u"]  -> "$2}' control.log | sort -u
 ```
-Expected: `@types/node [major]` on its OWN branch (e.g. `renovate/node-26.x`), while `node [major]` stays on `renovate/major-26-toolchain-versions`. This reproduces the YAS split and shows Task 3 is what fixes it.
+Expected: `@types/node [major]` on its OWN branch (youth-activity-scheduler #620's real branch was `renovate/node-26.x`; assert "not toolchain-versions", not the exact name), while `node [major]` stays on `renovate/major-26-toolchain-versions`. This reproduces the YAS split and shows Task 3 is what fixes it.
 
 - [ ] **Step 5: Record the evidence**
 
