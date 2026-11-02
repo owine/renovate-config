@@ -90,7 +90,7 @@
       "pinDigests": false
     },
     {
-      "description": "Node version pins use LTS-aware versioning — Renovate's 'node' versioning scheme tracks LTS lines (22, 24, 26, ...) and skips Current/odd-numbered releases (23, 25, 27, ...). LTS-to-LTS major bumps still come as separate manual-review PRs via the major-bump rule above.",
+      "description": "Node version pins use LTS-aware versioning. Renovate's 'node' versioning treats a major as stable only once the LTS start date in its bundled Node schedule (lib/data/node-js-schedule.json) has passed, so a new line is proposed from its LTS date (26: 2026-10-28), never during its Current phase. It keys on that date, NOT on even/odd: odd lines up to 25 never had an LTS date and were skipped, but under Node's new release schedule every line from 27 on becomes LTS (27: 2027-10-20) and will be proposed then. No preset change is needed when a line goes LTS; the date flips it. LTS-to-LTS major bumps still come as separate manual-review PRs via the major-bump rule above.",
       "matchPackageNames": ["node"],
       "matchDatasources": ["docker", "node-version"],
       "versioning": "node"
