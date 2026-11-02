@@ -146,11 +146,43 @@ sameUpdateTypes("the dev group takes the same update types as automerge.json's b
 // Behavioral: route real-shaped upgrades through the full rule chain
 //
 // Built-in rules first (config:best-practices pulls in
-// :semanticPrefixFixDepsChoreOthers, the `* => chore` this fleet overrides),
-// then the presets in each consumer's extends order.
+// :semanticPrefixFixDepsChoreOthers, the `* => chore` this fleet overrides,
+// and workarounds:typesNodeVersioning, which node.json's @types/node rule
+// relies on), then the presets in each consumer's extends order.
+//
+// resolveConfigPresets returns { config, visitedPresets }. Reading
+// `.packageRules` off the top level silently yielded [] and ran every case
+// without the built-ins, so an empty result is a binding failure (exit 2),
+// never a pass.
 // ---------------------------------------------------------------------------
-const builtin = (await resolveConfigPresets({ extends: defaults.extends })).packageRules ?? [];
+const resolved = await resolveConfigPresets({ extends: defaults.extends });
+const builtin = resolved?.config?.packageRules ?? [];
+if (!builtin.length) {
+  console.error(
+    `\nResolved default.json's extends (${defaults.extends.join(', ')}) but got no\n` +
+      `built-in packageRules (top-level keys: ${Object.keys(resolved ?? {}).join(', ') || 'none'}).\n\n` +
+      `This is a LAYOUT problem, not a config problem: resolveConfigPresets in the\n` +
+      `Renovate release at ${DIST} changed its return shape. Repoint the read above\n` +
+      `and re-run.\n`,
+  );
+  process.exit(2);
+}
 const rulesFor = (files) => [...builtin, ...files.flatMap((f) => preset(f).packageRules ?? [])];
+
+// node.json sends @types/node majors to toolchain-versions and relies on
+// Renovate's built-in workarounds:typesNodeVersioning for TIMING: under
+// `versioning: node` a types major is offered on its line's LTS date, the same
+// day as the runtime. If a Renovate release drops that workaround, types
+// majors would arrive months before the runtime again, alone on the group's
+// major branch. Fail loudly instead.
+{
+  checks++;
+  const name = "built-in rules give npm @types/node `versioning: node` (node.json's @types/node rule relies on it)";
+  const res = await applyPackageRules({ manager: 'npm', datasource: 'npm', depName: '@types/node', packageName: '@types/node', depType: 'devDependencies', packageFile: 'package.json', updateType: 'major', versioning: 'npm', packageRules: builtin });
+  if (res.versioning !== 'node')
+    fail(name, `got versioning ${JSON.stringify(res.versioning)}: workarounds:typesNodeVersioning is gone or changed; node.json needs its own versioning rule for @types/node`);
+  else ok(name);
+}
 
 // A vulnerable dep gets the rule Renovate builds in init/vulnerability.ts and
 // process/vulnerabilities.ts: appended LAST, carrying vulnerabilityAlerts as
@@ -202,6 +234,10 @@ const consumers = [
       // Runtime groups: fed by both shipping manifests and workflow inputs. See knownMixed.
       { why: 'packageManager pnpm', u: npmDep('pnpm', 'packageManager', 'patch'), group: 'toolchain-versions', type: 'deps' },
       { why: '.nvmrc node', u: { manager: 'nvm', depName: 'node', datasource: 'node-version', packageFile: '.nvmrc', updateType: 'patch' }, group: 'toolchain-versions', type: 'deps' },
+      // @types/node majors ride the runtime's major-NN branch (node.json); patches stay in the automerged bundle.
+      { why: '@types/node MAJOR rides the runtime major branch (YAS #620/#622 split)', u: npmDep('@types/node', 'devDependencies', 'major'), group: 'toolchain-versions', type: 'deps', versioning: 'node' },
+      { why: '@types/node patch stays in the automerged bundle (toolchain-versions is review-gated in :alpine repos)', u: npmDep('@types/node', 'devDependencies', 'patch'), group: BUNDLE, type: 'deps', versioning: 'node' },
+      { why: '@types/node MINOR stays in the bundle too: most types bumps are minors, so widening the rule past majors would stall them in :alpine repos', u: npmDep('@types/node', 'devDependencies', 'minor'), group: BUNDLE, type: 'deps', versioning: 'node' },
       // Workflow Node literals are tracked by their `# renovate: … depName=node-lts-NN packageName=node`
       // annotation (path-typed ci:). setup-node's NATIVE input dep is a duplicate of
       // the same span with no lane cap, so node.json disables it (claude-terminal-home-assistant #432/#433).
@@ -237,7 +273,7 @@ const consumers = [
 
       // Dev-only deps: hidden, and on their own branch (2.15.0's noise).
       { why: 'dev dep (lefthook)', u: npmDep('lefthook', 'devDependencies', 'patch'), group: DEV_GROUP, type: 'chore', week: 'dev' },
-      { why: 'dev dep (@types/node)', u: npmDep('@types/node', 'devDependencies', 'patch'), group: DEV_GROUP, type: 'chore' },
+      { why: 'dev dep (@types/node)', u: npmDep('@types/node', 'devDependencies', 'patch'), group: DEV_GROUP, type: 'chore', versioning: 'node' },
       { why: 'dev dep in a node.json group (typescript-eslint) joins the dev branch', u: npmDep('typescript-eslint', 'devDependencies', 'patch'), group: DEV_GROUP, type: 'chore' },
       { why: 'coupled dev pair stays together (vitest)', u: npmDep('vitest', 'devDependencies', 'patch'), group: DEV_GROUP, type: 'chore' },
       { why: 'coupled dev pair stays together (@vitest/coverage-v8)', u: npmDep('@vitest/coverage-v8', 'devDependencies', 'patch'), group: DEV_GROUP, type: 'chore' },
@@ -250,6 +286,7 @@ const consumers = [
       // Toolchain: dev-only members hidden, engines out of play.
       { why: 'packageManager pnpm is dev-only', u: npmDep('pnpm', 'packageManager', 'patch'), group: 'toolchain-versions', type: 'chore' },
       { why: '.nvmrc node is dev-only', u: { manager: 'nvm', depName: 'node', datasource: 'node-version', packageFile: '.nvmrc', updateType: 'patch' }, group: 'toolchain-versions', type: 'chore' },
+      { why: '@types/node MAJOR rides the runtime major branch, hidden like .nvmrc', u: npmDep('@types/node', 'devDependencies', 'major'), group: 'toolchain-versions', type: 'chore', versioning: 'node' },
       { why: 'engines.node is consumer-visible: disabled, never typed', u: npmDep('node', 'engines', 'minor', { datasource: 'node-version' }), enabled: false },
       { why: 'engines.pnpm is consumer-visible: disabled, never typed', u: npmDep('pnpm', 'engines', 'minor'), enabled: false },
       { why: 'LATENT: Dockerfile `FROM node` (no MCP repo has one)', u: { manager: 'dockerfile', depName: 'node', datasource: 'docker', packageFile: 'Dockerfile', updateType: 'patch' }, group: 'toolchain-versions', type: 'deps' },
@@ -293,6 +330,13 @@ for (const consumer of consumers) {
     const got = { group: res.groupName ?? undefined, type: res.semanticCommitType };
     if (res.enabled === false || got.group !== c.group || got.type !== c.type) {
       fail(name, `expected ${JSON.stringify({ group: c.group, type: c.type })}, got ${JSON.stringify({ ...got, enabled: res.enabled })}`);
+      continue;
+    }
+    // A case can pin the EFFECTIVE versioning after the full chain (built-ins +
+    // presets), not just what the built-ins alone set: a later preset rule
+    // could override it and the built-ins-only check above would not notice.
+    if (c.versioning && res.versioning !== c.versioning) {
+      fail(name, `expected versioning ${JSON.stringify(c.versioning)} after the full rule chain, got ${JSON.stringify(res.versioning)}: a preset rule overrides it`);
       continue;
     }
     if (c.week) groupOf[c.week] = got.group;
