@@ -237,6 +237,7 @@ const consumers = [
       // @types/node majors ride the runtime's major-NN branch (node.json); patches stay in the automerged bundle.
       { why: '@types/node MAJOR rides the runtime major branch (YAS #620/#622 split)', u: npmDep('@types/node', 'devDependencies', 'major'), group: 'toolchain-versions', type: 'deps' },
       { why: '@types/node patch stays in the automerged bundle (toolchain-versions is review-gated in :alpine repos)', u: npmDep('@types/node', 'devDependencies', 'patch'), group: BUNDLE, type: 'deps' },
+      { why: '@types/node MINOR stays in the bundle too: most types bumps are minors, so widening the rule past majors would stall them in :alpine repos', u: npmDep('@types/node', 'devDependencies', 'minor'), group: BUNDLE, type: 'deps' },
       // Workflow Node literals are tracked by their `# renovate: … depName=node-lts-NN packageName=node`
       // annotation (path-typed ci:). setup-node's NATIVE input dep is a duplicate of
       // the same span with no lane cap, so node.json disables it (claude-terminal-home-assistant #432/#433).
