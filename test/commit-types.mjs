@@ -169,6 +169,21 @@ if (!builtin.length) {
 }
 const rulesFor = (files) => [...builtin, ...files.flatMap((f) => preset(f).packageRules ?? [])];
 
+// node.json sends @types/node majors to toolchain-versions and relies on
+// Renovate's built-in workarounds:typesNodeVersioning for TIMING: under
+// `versioning: node` a types major is offered on its line's LTS date, the same
+// day as the runtime. If a Renovate release drops that workaround, types
+// majors would arrive months before the runtime again, alone on the group's
+// major branch. Fail loudly instead.
+{
+  checks++;
+  const name = "built-in rules give npm @types/node `versioning: node` (node.json's @types/node rule relies on it)";
+  const res = await applyPackageRules({ manager: 'npm', datasource: 'npm', depName: '@types/node', packageName: '@types/node', depType: 'devDependencies', packageFile: 'package.json', updateType: 'major', versioning: 'npm', packageRules: builtin });
+  if (res.versioning !== 'node')
+    fail(name, `got versioning ${JSON.stringify(res.versioning)}: workarounds:typesNodeVersioning is gone or changed; node.json needs its own versioning rule for @types/node`);
+  else ok(name);
+}
+
 // A vulnerable dep gets the rule Renovate builds in init/vulnerability.ts and
 // process/vulnerabilities.ts: appended LAST, carrying vulnerabilityAlerts as
 // `force`. Built here the same way, so a change to vulnerabilityAlerts is
