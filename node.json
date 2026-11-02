@@ -133,7 +133,7 @@
       "groupName": "cloudflare-workers"
     },
     {
-      "description": "PRE-SEEDED, NOT YET IN THE FLEET. The rules from here to the end of this block cover ecosystems no owine repo installs today; they exist so that the FIRST repo to adopt one is grouped correctly on day one rather than discovering the split the way owine/youth-activity-scheduler#420/#421 did. A rule that matches nothing costs nothing at resolve time, and this preset already carries forward-looking entries on the same logic (see the node-lts-26 lane at the bottom of this file). Each is a single scope or release train verified to publish in lockstep; the soft ones are labelled as churn reduction rather than break prevention so a future reader does not mistake the justification. Storybook: every @storybook/* package is one monorepo release and the framework/builder/addon triple asserts on mismatch at boot.",
+      "description": "PRE-SEEDED, NOT YET IN THE FLEET. The rules from here to the end of this block cover ecosystems no owine repo installs today; they exist so that the FIRST repo to adopt one is grouped correctly on day one rather than discovering the split the way owine/youth-activity-scheduler#420/#421 did. A rule that matches nothing costs nothing at resolve time, and this preset already carries forward-looking entries on the same logic (see the node-lts-27 lane at the bottom of this file). Each is a single scope or release train verified to publish in lockstep; the soft ones are labelled as churn reduction rather than break prevention so a future reader does not mistake the justification. Storybook: every @storybook/* package is one monorepo release and the framework/builder/addon triple asserts on mismatch at boot.",
       "matchPackageNames": ["storybook", "/^@storybook//"],
       "groupName": "storybook"
     },
@@ -226,7 +226,7 @@
       "enabled": false
     },
     {
-      "description": "Per-LTS-lane Node slots — workflow matrix entries annotated with `depName=node-lts-NN packageName=node` represent a specific LTS line and must not be major-bumped. Listed lanes cover current + near-future LTSs; add a new entry when a new LTS ships.",
+      "description": "Per-LTS-lane Node slots — workflow matrix entries annotated with `depName=node-lts-NN packageName=node` represent a specific LTS line and must not be major-bumped. Listed lanes cover current + near-future LTSs. A lane with no entry here is UNCAPPED, so add the next one before any workflow is annotated with it. From 27 on, Node ships one major a year and every major becomes LTS, so lanes are now consecutive (27, 28, ...), not every other number.",
       "matchDepNames": ["node-lts-22"],
       "allowedVersions": "<23"
     },
@@ -237,6 +237,10 @@
     {
       "matchDepNames": ["node-lts-26"],
       "allowedVersions": "<27"
+    },
+    {
+      "matchDepNames": ["node-lts-27"],
+      "allowedVersions": "<28"
     }
   ]
 }
