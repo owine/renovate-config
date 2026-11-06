@@ -50,6 +50,7 @@ const { extractPackageFile } = await load('modules/manager/gomod/extract.js');
 const { applyPackageRules } = await load('util/package-rules/index.js');
 const { api: goModDirective } = await load('modules/versioning/go-mod-directive/index.js');
 const { api: semver } = await load('modules/versioning/semver/index.js');
+const { api: npmVersioning } = await load('modules/versioning/npm/index.js');
 const { api: dockerVersioning } = await load('modules/versioning/docker/index.js');
 const { filterInternalChecks } = await load('workers/repository/process/lookup/filter-checks.js');
 const { generateBranchConfig } = await load('workers/repository/updates/generate.js');
@@ -172,6 +173,22 @@ for (const [currentValue, newVersion, want, why] of [
   const res = await applyPackageRules({ ...labelprint, ...toolchainDirective, updateType: 'patch' });
   const got = semver.getNewValue({ currentValue: '1.27.2', rangeStrategy: res.rangeStrategy, currentVersion: '1.27.2', newVersion: '1.27.3' });
   if (res.rangeStrategy !== 'pin' || got !== '1.27.3') fail(name, `rangeStrategy ${res.rangeStrategy}, rewrote to ${JSON.stringify(got)}`);
+  else ok(name);
+}
+
+{
+  // Deliberately NOT python.json's `replace`: the group exists so CI tests the
+  // exact Go the image ships, so a floating `1.27` is pinned once and then
+  // moves with the image.
+  checks++;
+  const name = "setup-go: a two-part `go-version: '1.27'` is pinned to the exact triple, on the go toolchain branch";
+  const res = await applyPackageRules({ ...labelprint, ...setupGoDep, currentValue: '1.27', updateType: 'pin' });
+  // lookup/index.ts emits a pin for a non-single-version value under `pin`,
+  // with newValue = getPinnedValue(currentVersion) ?? currentVersion.
+  const pins = res.rangeStrategy === 'pin' && !npmVersioning.isSingleVersion('1.27');
+  const got = pins ? (npmVersioning.getPinnedValue?.('1.27.3') ?? '1.27.3') : null;
+  if (got !== '1.27.3' || res.groupName !== 'go toolchain')
+    fail(name, `rangeStrategy ${res.rangeStrategy}, pinned to ${JSON.stringify(got)}, groupName ${JSON.stringify(res.groupName)}`);
   else ok(name);
 }
 
