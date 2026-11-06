@@ -653,7 +653,10 @@ g. Before the human publishes, check that the latest `main` build is green (`gh 
   soak, and `renovate/stability-days` holds the merge until the Go release has
   soaked. A Go **minor** gets a 7-day soak, `automerge: false` and
   `breaking`/`needs-review`. The `go` line flips GODEBUG defaults, and an
-  x.y.0 is usually followed by an x.y.1 within weeks.
+  x.y.0 is usually followed by an x.y.1 within weeks. **While that minor PR
+  waits, no patch PR opens**: `separateMinorPatch` is off fleet-wide, so the
+  branch always targets the newest release, and the image misses the N-1
+  security releases Go ships alongside. Merge the minor promptly after review.
 
   Two known gaps. **Stdlib CVEs move only the `toolchain` line**: Renovate maps
   OSV's Go `stdlib` advisories onto the `toolchain` directive alone, and

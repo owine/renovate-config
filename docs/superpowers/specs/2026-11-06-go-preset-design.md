@@ -40,19 +40,23 @@ defects, and two of those would also bite the next Go repo:
 
 ## go.json
 
-Extend after `:automerge`, before `:docker` (python.json's slot). Rules, in order:
+Extend after `:automerge`, before `:docker` (python.json's slot). Top-level options, then rules in order:
 
-1. **gomod artifacts.** `matchManagers: [gomod]`, `postUpdateOptions:
-   [gomodTidy, gomodUpdateImportPaths]`. In a packageRule because
-   `postUpdateOptions` is not mergeable: a top-level value would be replaced
-   by any consumer setting its own.
+1. **gomod artifacts** (top level, not a rule). `postUpdateOptions:
+   [gomodTidy, gomodUpdateImportPaths]`. The option is `mergeable`, so preset
+   and consumer lists concatenate. Artifact steps read the branch config,
+   which `generateBranchConfig` builds from `upgrades[0]` (sorted by depName),
+   so a gomod-scoped rule would be skipped on a branch led by setup-go or an
+   npm dep. (The first draft scoped it to a rule on the false premise that
+   the option isn't mergeable; caught in review.)
 2. **Indirect modules.** `matchManagers: [gomod]`, `matchDepTypes: [indirect]`,
    `enabled: true`.
 3. **`go` directive.** `matchManagers: [gomod]`, `matchDepTypes: [golang]`,
    `rangeStrategy: bump`. Not the `toolchain` directive: it uses semver
    versioning and already updates under `pin`.
 4. **`golang-x` group.** `matchDatasources: [go]`, `/^golang\.org\/x\//`.
-5. **`go toolchain` group.** `go` (both directives), `golang`,
+5. **`go toolchain` group.** Scoped to datasources `docker`, `golang-version`,
+   `github-releases` (keeps apk/mise `go` out). `go` (both directives), `golang`,
    `docker.io/library/golang`, `actions/go-versions` (setup-go's and
    setup-go-faster's `go-version:` input; pre-seeded, labelprint reads
    `go-version-file`). `internalChecksFilter: none`, `semanticCommitType: deps`.
@@ -72,6 +76,12 @@ docker.json: add `!golang`, `!docker.io/library/golang` to `dockerfile bases`.
   shipped binary keeps the vulnerable stdlib. labelprint has no `toolchain`
   line, so its image moves on the normal schedule (and Trivy fails main until
   then).
+- **Patches stall while a minor is held.** `separateMinorPatch` is off
+  fleet-wide, so a 1.27.x patch and 1.28.0 share the `non-major` bucket, and
+  under `internalChecksFilter: none` the branch targets the newest release.
+  Once 1.28.0 appears, the manual minor PR is the only Go PR; merge it
+  promptly. Scoping `separateMinorPatch` to the group was not pursued (two
+  PRs per cycle, branch naming unverified).
 - **Libraries.** Bumping the `go` directive raises every downstream module's
   floor. No fleet repo is a Go library. A library would disable
   `matchDepTypes: [golang]`.

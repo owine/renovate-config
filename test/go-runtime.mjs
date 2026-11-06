@@ -77,6 +77,8 @@ const consumerConfig = (files) => ({
   rangeStrategy: def.rangeStrategy, // default.json's top-level `pin`
   minimumReleaseAge: def.minimumReleaseAge,
   minimumReleaseAgeBehaviour: def.minimumReleaseAgeBehaviour,
+  // Top-level and mergeable: preset lists concatenate (mergeChildConfig).
+  postUpdateOptions: [def, ...files.map(preset)].flatMap((p) => p.postUpdateOptions ?? []),
   packageRules: [...def.packageRules, ...files.flatMap((f) => preset(f).packageRules)],
 });
 const labelprint = consumerConfig(consumers.labelprint);
@@ -203,6 +205,7 @@ const grouping = [
   { dep: setupGoDep, group: 'go toolchain', why: "setup-go's `go-version:` input (pre-seeded)" },
   { dep: imageDep('golangci/golangci-lint'), group: 'dockerfile bases', why: 'a look-alike image stays in dockerfile bases' },
   { dep: imageDep('alpine'), group: 'dockerfile bases', why: 'the runtime stage stays in dockerfile bases' },
+  { dep: { manager: 'dockerfile', depName: 'go', packageName: 'go', datasource: 'apk', depType: 'install', packageFile: 'Dockerfile' }, group: 'alpine packages', why: "an apk `go` package stays in alpine packages (datasource scope)", alpineOnly: true },
   { dep: gomod(byName('golang.org/x/text')), group: 'golang-x', why: 'indirect golang.org/x/text joins golang-x' },
   { dep: gomod(byName('golang.org/x/image')), group: 'golang-x', why: 'indirect golang.org/x/image joins golang-x' },
   { dep: gomod(byName('github.com/ingridhq/zebrash')), group: 'all non-major dependencies', why: 'an ordinary require rides the bundle' },
@@ -215,6 +218,7 @@ for (const [repo, files] of Object.entries(consumers)) {
   const cfg = consumerConfig(files);
   const wrong = [];
   for (const g of grouping) {
+    if (g.alpineOnly && !files.includes('alpine.json')) continue;
     const res = await applyPackageRules({ ...cfg, ...g.dep, updateType: 'patch' });
     if (res.groupName !== g.group) wrong.push(`${g.dep.manager} ${g.dep.depName} (${g.why}): groupName ${JSON.stringify(res.groupName)}, expected ${JSON.stringify(g.group)}`);
     if (res.enabled === false) wrong.push(`${g.dep.manager} ${g.dep.depName}: disabled`);
@@ -240,18 +244,24 @@ for (const [repo, files] of Object.entries(consumers)) {
   if (wrong.length) fail(name, wrong.join('\n'));
   else ok(name);
 }
-{
+// postUpdateOptions must reach the BRANCH config, which artifact steps read.
+// generateBranchConfig spreads `upgrades[0]` (sorted by depName) over it, so
+// a gomod-scoped packageRule only counted when a gomod upgrade sorted first.
+// Both shapes below put a non-gomod upgrade first.
+for (const [why, members] of [
+  ['a go toolchain branch led by setup-go (depName `go` ties with go.mod; manager order keeps it first)', [[setupGoDep, '.github/workflows/ci.yml'], [goDirective, 'go.mod'], [imageDep('golang'), 'Dockerfile']]],
+  ['an npm + go bundle led by an npm dep', [[{ manager: 'npm', depName: 'axios', packageName: 'axios', datasource: 'npm', depType: 'dependencies' }, 'package.json'], [gomod(byName('github.com/ingridhq/zebrash')), 'go.mod']]],
+]) {
   checks++;
-  const name = 'gomod updates run gomodTidy + gomodUpdateImportPaths; other managers get neither';
-  const wrong = [];
-  for (const d of [goDirective, gomod(byName('github.com/ingridhq/zebrash')), gomod(byName('golang.org/x/text'))]) {
-    const res = await applyPackageRules({ ...labelprint, ...d, updateType: 'minor' });
-    for (const o of ['gomodTidy', 'gomodUpdateImportPaths'])
-      if (!res.postUpdateOptions?.includes(o)) wrong.push(`${d.depName}: missing ${o} (got ${JSON.stringify(res.postUpdateOptions)})`);
+  const name = `gomodTidy + gomodUpdateImportPaths reach the branch config: ${why}`;
+  const upgrades = [];
+  for (const [dep, packageFile] of members) {
+    const res = await applyPackageRules({ ...labelprint, ...dep, updateType: 'patch' });
+    upgrades.push({ ...res, packageFile, branchName: 'renovate/x', newVersion: '1.0.0' });
   }
-  const image = await applyPackageRules({ ...labelprint, ...imageDep('golang'), updateType: 'minor' });
-  if (image.postUpdateOptions?.length) wrong.push(`dockerfile golang: got ${JSON.stringify(image.postUpdateOptions)}`);
-  if (wrong.length) fail(name, wrong.join('\n'));
+  const branch = generateBranchConfig(upgrades);
+  const missing = ['gomodTidy', 'gomodUpdateImportPaths'].filter((o) => !branch.postUpdateOptions?.includes(o));
+  if (missing.length) fail(name, `branch led by ${branch.upgrades[0].manager} ${branch.upgrades[0].depName} has postUpdateOptions ${JSON.stringify(branch.postUpdateOptions)}`);
   else ok(name);
 }
 
@@ -289,10 +299,13 @@ for (const s of soaks) {
     const res = await applyPackageRules({ ...labelprint, ...dep });
     if (res.internalChecksFilter !== 'none') wrong.push(`${dep.manager} ${dep.depName}: ${res.internalChecksFilter}`);
   }
-  for (const dep of [imageDep('golangci/golangci-lint'), imageDep('alpine'), gomod(byName('golang.org/x/text'))]) {
+  const apkGo = { manager: 'dockerfile', depName: 'go', packageName: 'go', datasource: 'apk', depType: 'install', packageFile: 'Dockerfile' };
+  for (const dep of [imageDep('golangci/golangci-lint'), imageDep('alpine'), gomod(byName('golang.org/x/text')), apkGo]) {
     const res = await applyPackageRules({ ...labelprint, ...dep });
     if (res.internalChecksFilter !== 'strict') wrong.push(`${dep.manager} ${dep.depName} should stay strict, got ${res.internalChecksFilter}`);
   }
+  const apkMinor = await applyPackageRules({ ...labelprint, ...apkGo, updateType: 'minor' });
+  if (apkMinor.addLabels?.includes('breaking')) wrong.push('apk go minor: picked up the Go minor gate labels');
   if (wrong.length) fail(name, wrong.join('\n'));
   else ok(name);
 }
@@ -308,7 +321,7 @@ for (const s of soaks) {
 const lookup = async (dep, current, versioning, releases, updateType) => {
   const cfg = await applyPackageRules({ ...labelprint, ...dep, updateType });
   const sorted = releases.map(([version, days]) => ({ version, releaseTimestamp: new Date(Date.now() - days * DAY).toISOString() }));
-  const { release, pendingChecks } = await filterInternalChecks({ ...cfg, currentVersion: current }, versioning, updateType === 'minor' ? 'minor' : 'non-major', sorted);
+  const { release, pendingChecks } = await filterInternalChecks({ ...cfg, currentVersion: current }, versioning, 'non-major', sorted);
   return { ...cfg, branchName: 'renovate/go-toolchain', newVersion: release.version, releaseTimestamp: release.releaseTimestamp, pendingChecks };
 };
 
