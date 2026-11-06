@@ -41,6 +41,13 @@ jobs:
       - name: Test python runtime behavior
         run: node test/python-runtime.mjs
 
+      # go.json's `go toolchain` group: the `go` directive must bump (under the
+      # fleet's `pin` it never moves), the golang image and go.mod must share
+      # one branch at one version through the soak (GOTOOLCHAIN=local fails a
+      # split), and a Go minor must stay manual.
+      - name: Test go runtime behavior
+        run: node test/go-runtime.mjs
+
       # A branch takes ONE commit type and `ci`/`chore` outrank `deps`, so a
       # group that mixes them silently drops releases (unifi-protect-mcp
       # #284). Asserts the CI and dev groups mirror the rules that assign
@@ -70,6 +77,7 @@ jobs:
             automerge.json \
             node.json \
             python.json \
+            go.json \
             docker.json \
             mcp.json \
             alpine.json \
