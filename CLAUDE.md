@@ -30,7 +30,7 @@ preset; with no arguments it checks only `renovate.json`:
 
 ```sh
 renovate-config-validator --strict renovate.json default.json automerge.json \
-  node.json python.json docker.json mcp.json alpine.json home-assistant.json
+  node.json python.json go.json docker.json mcp.json alpine.json home-assistant.json
 ```
 
 ## Everything here is live on merge

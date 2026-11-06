@@ -14,6 +14,7 @@ In any repo's `renovate.json`:
     "github>owine/renovate-config:automerge",
     "github>owine/renovate-config:node",
     "github>owine/renovate-config:python",
+    "github>owine/renovate-config:go",
     "github>owine/renovate-config:docker",
     "github>owine/renovate-config:mcp",
     "github>owine/renovate-config:alpine"
@@ -31,7 +32,8 @@ Only extend the ecosystem presets a repo actually uses. Extend `:mcp` *after* `:
 | `automerge.json` | Group all non-major updates into one weekly PR, automerge once CI passes. CI plumbing (Actions + `.github/workflows` literals) gets a **second** weekly PR, `all non-major ci dependencies`, so a `ci:` bump can't take a runtime bump's release with it (see Commit types). `pin`/`pinDigest` are split onto a separate `pins` PR so they can run at any time — a `groupName` is a branch name and a branch gets one schedule, so bundling them would have pinned them to Monday. Skip if you want hand-review of every patch. |
 | `node.json` | Node/TS ecosystem groupings (most are peer-dep/lockstep coupled; a few are explicitly churn reduction — each rule says which): React, TanStack, Radix (the unified `radix-ui` package **and** the legacy `@radix-ui/*` primitives, for migration coherence), Vite, Tailwind (`tailwindcss` + `@tailwindcss/*` only — **not** the third-party `tailwind-merge`/`tw-animate-css`), Vitest (the whole `@vitest/*` scope, incl. `@vitest/ui`) + testcontainers, Testing Library (the `@testing-library/react` + `@testing-library/dom` peer pair only), ESLint plugins, ESLint core (`eslint` + `@eslint/js`, deliberately a **separate** group from the plugins), Prisma, Auth.js, pg, Hono, Preact, Cloudflare Workers (wrangler/@cloudflare/miniflare, plus the npm `cf` CLI, which is coupled to wrangler via its generated `wrangler.config.ts` and scoped to npm because PyPI and mise also use the name `cf`), toolchain (node+pnpm, plus `@types/node` majors so they share the runtime's major PR). Plus Next.js (incl. `eslint-config-next`, which must stay ordered after `eslint plugins`), Playwright (**npm-scoped via `matchDatasources`** so it never reaches the PyPI package of the same name), react-hook-form, stylelint, tesseract.js, Sentry (the `getsentry/sentry-javascript` SDK monorepo **only**, matched by `matchSourceUrls` because the `@sentry/*` scope spans several release trains. The bundler plugins and `@sentry/cli` stay ungrouped). A trailing **pre-seeded** block covers ecosystems no repo uses yet (storybook, OpenTelemetry, AWS SDK, tRPC, drizzle, NestJS, Babel, SWC, jest, astro, nuxt, SvelteKit, expo, apollo, clerk, supabase) so the first adopter is grouped on day one. The AWS/OTel group names are ecosystem-suffixed (`aws-sdk-js`, `opentelemetry-js`) because a groupName is a branch name — sharing one with `python.json` would merge both ecosystems into a single cross-manager PR. |
 | `python.json` | pep621 ecosystem groupings (mostly peer-dep/hard-pinned; `scientific-python` is churn reduction): FastAPI stack, Pydantic, SQLAlchemy stack, pytest, lint/types tooling, boto3+botocore (hard pin), PyTorch trio, LangChain, OpenTelemetry, Celery (`vine` is also an npm name — the `matchManagers` scope is load-bearing), plus pre-seeded Django, Hugging Face, and numpy/scipy/pandas. `sentry-sdk` is deliberately **not** grouped: it's a single package whose integration extras set only version floors (see the file's top-level description). Plus a `python runtime` group binding an exact-pinned `requires-python` (native pep621 manager, so Renovate regenerates `uv.lock` itself) to the `python` Docker base image, `.python-version`, and the CPython version a workflow passes to `uv python install` or `actions/setup-python`. CPython **minors** (`3.14` → `3.15`) are reviewed like majors; patches automerge. Every other `requires-python` shape (`>=3.10`, `~=3.14`, `==3.14.*`) is metadata and stays untracked. See Consumer notes. |
-| `docker.json` | Dockerfile base bundling, GH Actions setup/artifact/docker families, runtime-major flags. The `dockerfile bases` group **excludes the language-runtime images** (`node`/`pnpm`/`python`, both bare and `docker.io/library/…` spellings) so they stay with their own runtime groups — see Consumer notes. |
+| `go.json` | Go (gomod). A `go toolchain` group binding the `golang` Docker image to go.mod's `go` and `toolchain` directives and setup-go's `go-version:` input, so CI and the image never build with different Go. Forces **`rangeStrategy: bump` on the `go` directive**: under the fleet's `pin` it never moves. Go **minors** (`1.27` → `1.28`) are reviewed like majors; patches automerge. Tracks **indirect** modules (Renovate skips them by default, and that's where the CVEs land), groups `golang.org/x/*` as `golang-x`, and runs `gomodTidy` + `gomodUpdateImportPaths` on every gomod update. Extend after `:automerge`, before `:docker`. See Consumer notes. |
+| `docker.json` | Dockerfile base bundling, GH Actions setup/artifact/docker families, runtime-major flags. The `dockerfile bases` group **excludes the language-runtime images** (`node`/`pnpm`/`python`/`golang`, both bare and `docker.io/library/…` spellings) so they stay with their own runtime groups — see Consumer notes. |
 | `mcp.json` | MCP server repos, i.e. **npm-published libraries**: isolate `@modelcontextprotocol/sdk` for manual review (no automerge); leave every `engines` range alone so library consumers keep a broad one; and commit **dev-only** updates (`devDependencies`, `packageManager`, `.nvmrc`) as `chore:`, so they stop cutting no-op patch releases. Non-major `devDependencies` get their own `all non-major dev dependencies` PR (automerge inherited from `automerge.json`), keeping `chore:` off the `deps:` bundle. Runtime `dependencies` and security fixes still release. See Commit types. Extend after `node.json`. |
 | `alpine.json` | Alpine updates. apk pins (**built-in `apk` datasource**, extracted from `RUN apk add` by the dockerfile manager since Renovate 44.96.0): one `alpine packages` group, 0-day soak, runs any time, **automerges every non-major bump (patch/pin/digest/minor) together**, and forces `rangeStrategy: replace` (without it every drifted pin goes silently dark). Gates **`node:*-alpine` image bumps** (minor/patch) to manual review. Also gates **alpine base-image (`docker`) minor bumps** to manual review (the base-image patch line automerges). Carved out of `automerge.json`'s bundle **and** of `docker.json`'s `dockerfile bases` group — extend after both. **Requires a consumer-side `registryUrls`** naming the Alpine release line (see Consumer notes). |
 | `home-assistant.json` | Home Assistant add-on repos. Pins the HA base image (`ghcr.io/home-assistant/base`) to a versioned tag + digest and gates its **minor bumps** to manual review (the tag *is* the Alpine line, so a bump means hand-editing the `branch=vX.Y` in the consumer's apk `registryUrls`); digest rebuilds automerge. Adds CalVer versioning for the `home-assistant/builder` action. Extend after `:automerge`/`:docker` (and `:alpine` if used). |
@@ -59,11 +61,15 @@ Locally:
 npm i renovate && RENOVATE_DIST=./node_modules/renovate/dist node test/custom-managers.mjs
 ```
 
-`test/python-runtime.mjs` and `test/commit-types.mjs` use the same engine on
-the package-rule side: the first checks `python runtime` tracking, grouping,
-soak and review for every member (pin, image, `.python-version`, workflow
-lines) through each consumer's real extends order,
-the second checks that no group mixes a hidden type (`ci:`, `chore:`) with `deps:` (see Commit types & release notes below).
+`test/python-runtime.mjs`, `test/go-runtime.mjs` and `test/commit-types.mjs`
+use the same engine on the package-rule side. `python-runtime.mjs` checks
+`python runtime` tracking, grouping, soak and review for every member (pin,
+image, `.python-version`, workflow lines) through each consumer's real extends
+order. `go-runtime.mjs` does the same for `go toolchain` (the `go` directive's
+bump, image and go.mod on one branch at one version through the soak, Go-minor
+review), plus indirect modules, `golang-x` and `postUpdateOptions`.
+`commit-types.mjs` checks that no group mixes a hidden type (`ci:`, `chore:`)
+with `deps:` (see Commit types & release notes below).
 
 `test/release-drafter.mjs` closes the loop on the consumer side: it checks that
 the shared `release-drafter.yml` shows every commit type the presets release
@@ -555,13 +561,14 @@ g. Before the human publishes, check that the latest `main` build is green (`gh 
   gate losing to `docker.json`'s "dockerfile bases" group / `automerge.json`'s
   bundle).
 
-- **Language runtimes move as one PR, by exclusion — not by ordering.** Both
-  `node.json`'s `toolchain-versions` and `python.json`'s `python runtime` group a
+- **Language runtimes move as one PR, by exclusion — not by ordering.**
+  `node.json`'s `toolchain-versions`, `python.json`'s `python runtime` and
+  `go.json`'s `go toolchain` each group a
   runtime's Docker base image together with the manifest that pins the same
   version. `docker.json`'s `dockerfile bases` rule matches
   `matchManagers: ["dockerfile"]`, so it would otherwise re-group those base
-  images out — last matching rule wins, and `:node`/`:python` are extended before
-  `:docker`. It therefore **negates** `node`, `pnpm`, `python`, and their
+  images out — last matching rule wins, and `:node`/`:python`/`:go` are extended
+  before `:docker`. It therefore **negates** `node`, `pnpm`, `python`, `golang`, and their
   `docker.io/library/…` spellings. The negation is deliberate rather than a
   reliance on preset order: `extends` order lives in each consumer's
   `renovate.json`, and no consumer should have to know that grouping depends on
@@ -618,6 +625,7 @@ g. Before the human publishes, check that the latest `main` build is green (`gh 
   |---------|--------------|--------------------------|
   | Node | `FROM node:X` vs `.nvmrc` + `engines.node` + `packageManager` | `ERR_PNPM_UNSUPPORTED_ENGINE` under `engineStrict`, mirrored expected/got |
   | Python | `FROM python:X` vs `requires-python = "==X.Y.Z"` + `uv.lock` | `No interpreter found for Python <old>` / the old base image can't satisfy the new pin |
+  | Go | `FROM golang:X` vs go.mod's `go X.Y.Z` | the image sets `GOTOOLCHAIN=local`: `go.mod requires go >= <new> (running go <old>)`; the other way round, CI (`go-version-file: go.mod`) tests an older Go than the image ships |
 
   Digest pinning is unaffected either way: `pinDigests` comes from
   `default.json`'s `matchManagers: ["dockerfile", "github-actions"]` rule, and
@@ -631,7 +639,35 @@ g. Before the human publishes, check that the latest `main` build is green (`gh 
   `automerge.json`'s non-major bundle) — self-consistent, since there is no
   manifest on the other side to disagree with it.
 
-- **Runtime majors stay grouped.** Neither runtime rule sets
+- **`go toolchain`: the `go` directive only moves under `bump`.** gomod reads
+  `go 1.27.3` with `go-mod-directive` versioning, as the range `^1.27.3`, and
+  returns a new value only under `rangeStrategy: bump`. Under the fleet's `pin`
+  (or `replace`) the directive produces no update and no warning, and the group
+  silently carries only the image. `go.json` forces `bump` for depType `golang`.
+  It writes the full triple, so `go 1.22` becomes `go 1.27.3`.
+
+  The soak works as it does for Python. golang-version dates a release by Go's
+  release day; Docker Hub re-dates `golang:*` on every base rebuild
+  (`1.27.3-alpine` was dated 2026-11-06, 18 days after Go 1.27.3). So the group
+  sets `internalChecksFilter: none` and exempts the Dockerfile image from the
+  soak, and `renovate/stability-days` holds the merge until the Go release has
+  soaked. A Go **minor** gets a 7-day soak, `automerge: false` and
+  `breaking`/`needs-review`. The `go` line flips GODEBUG defaults, and an
+  x.y.0 is usually followed by an x.y.1 within weeks. **While that minor PR
+  waits, no patch PR opens**: `separateMinorPatch` is off fleet-wide, so the
+  branch always targets the newest release, and the image misses the N-1
+  security releases Go ships alongside. Merge the minor promptly after review.
+
+  Two known gaps. **Stdlib CVEs move only the `toolchain` line**: Renovate maps
+  OSV's Go `stdlib` advisories onto the `toolchain` directive alone, and
+  `vulnerabilityAlerts` forces them onto `security updates`, so in a repo with a
+  `toolchain` line the security PR leaves the image (and the shipped binary)
+  behind. Repos without a `toolchain` line get the image on the normal
+  schedule. **Libraries**: a `go` directive bump raises every downstream
+  module's floor. No fleet repo is a Go library; one would disable depType
+  `golang` in its own config.
+
+- **Runtime majors stay grouped.** None of the runtime rules sets
   `matchUpdateTypes`, so the group covers majors too — a runtime major has the
   same drift hazard as a patch, and both deps bump to the same version. This
   doesn't weaken the major policy: `separateMajorMinor`/`separateMultipleMajor`

@@ -205,7 +205,7 @@ const action = (depName, updateType, packageFile = WF) => ({ manager: 'github-ac
 const consumers = [
   {
     name: 'app',
-    files: ['default.json', 'automerge.json', 'node.json', 'python.json', 'docker.json'],
+    files: ['default.json', 'automerge.json', 'node.json', 'python.json', 'go.json', 'docker.json'],
     cases: [
       // The #284 mix: these three were on one branch.
       { why: 'production npm dep (ws in #284)', u: npmDep('ws', 'dependencies', 'minor'), group: BUNDLE, type: 'deps' },
@@ -250,6 +250,15 @@ const consumers = [
       { why: '.python-version (pyenv)', u: { manager: 'pyenv', depName: 'python', datasource: 'docker', packageFile: '.python-version', updateType: 'patch' }, group: 'python runtime', type: 'deps' },
       { why: '`uv python install X.Y` in a workflow (python.json customManager, path-typed ci: by default.json)', u: { manager: 'regex', depName: 'python', datasource: 'python-version', depType: 'uv-python-install', packageFile: WF, updateType: 'minor' }, group: 'python runtime', type: 'deps' },
       { why: 'setup-python `python-version:` literal (uses-with; real packageName actions/python-versions)', u: { manager: 'github-actions', depName: 'python', packageName: 'actions/python-versions', datasource: 'github-releases', depType: 'uses-with', packageFile: WF, updateType: 'patch' }, group: 'python runtime', type: 'deps' },
+      // go toolchain is typed `deps:` by go.json for the same reason: setup-go's
+      // input is a workflow line, and one `ci:` member would hide a Go bump of
+      // the shipped binary.
+      { why: 'FROM golang (go.json; docker.json negates it out of dockerfile bases)', u: { manager: 'dockerfile', depName: 'golang', datasource: 'docker', packageFile: 'Dockerfile', updateType: 'patch' }, group: 'go toolchain', type: 'deps' },
+      { why: 'go.mod `go` directive', u: { manager: 'gomod', depName: 'go', datasource: 'golang-version', depType: 'golang', packageFile: 'go.mod', updateType: 'patch' }, group: 'go toolchain', type: 'deps' },
+      { why: 'go.mod `toolchain` directive', u: { manager: 'gomod', depName: 'go', datasource: 'golang-version', depType: 'toolchain', packageFile: 'go.mod', updateType: 'patch' }, group: 'go toolchain', type: 'deps' },
+      { why: 'setup-go `go-version:` literal (uses-with; real packageName actions/go-versions)', u: { manager: 'github-actions', depName: 'go', packageName: 'actions/go-versions', datasource: 'github-releases', depType: 'uses-with', packageFile: WF, updateType: 'patch' }, group: 'go toolchain', type: 'deps' },
+      { why: 'gomod require rides the bundle', u: { manager: 'gomod', depName: 'github.com/ingridhq/zebrash', datasource: 'go', depType: 'require', packageFile: 'go.mod', updateType: 'minor' }, group: BUNDLE, type: 'deps' },
+      { why: 'indirect golang.org/x module (go.json re-enables indirects)', u: { manager: 'gomod', depName: 'golang.org/x/text', datasource: 'go', depType: 'indirect', packageFile: 'go.mod', updateType: 'minor' }, group: 'golang-x', type: 'deps' },
     ],
     // Groups that CAN still carry two commit types, each with the reason it is
     // accepted. A group listed here that stops mixing fails the run, so a
