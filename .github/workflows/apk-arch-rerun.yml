@@ -1,0 +1,234 @@
+# Reusable: rerun a Renovate PR's Docker build that lost the race against
+# Alpine's per-architecture publishing.
+#
+# Alpine publishes each architecture separately, and either one can trail the
+# other by as long as its build takes (nodejs 24.22.3-r0: aarch64 2h32m after
+# x86_64). An `alpine packages` PR built inside that gap fails on the late
+# architecture with `unable to select packages`, and nothing on the Renovate
+# side can wait for it: the apk datasource dates a release by the APKINDEX
+# `t:` field, the source commit time, which is the same on every architecture
+# (alpine.json, the apk group rule). Once every architecture carries the pins,
+# rerunning the failed jobs is all the PR needs.
+#
+# For each open renovate[bot] PR whose latest `workflow` run failed, and whose
+# failed-job log contains `unable to select packages`, this reads the
+# `apk add` pins from the PR head's Dockerfile and checks each one against the
+# APKINDEX of every architecture × component. All present: `gh run rerun
+# --failed`. Otherwise it logs which pin is missing where and leaves the run
+# alone. Any other failure is left alone. Only the indexes are fetched, and
+# only their APKINDEX member is read, as text; nothing from them is run or
+# written to disk.
+#
+# Exit 1 only for a caller problem (a bad input, an index that can't be
+# fetched), so a misconfigured caller goes red instead of silently doing
+# nothing. Every per-PR outcome exits 0.
+#
+# The caller stub is in README (Consumer notes, apk architecture lag). The
+# step script is tested by test/apk-arch-rerun.mjs; change both together.
+name: apk arch-lag rerun
+
+on:
+  workflow_call:
+    inputs:
+      workflow:
+        description: File name of the workflow that builds the image on PRs (e.g. ci.yml).
+        type: string
+        required: true
+      dockerfile:
+        description: Path of the Dockerfile holding the `apk add` pins.
+        type: string
+        default: Dockerfile
+      arches:
+        description: Alpine architecture names the caller builds (x86_64, aarch64, …), space- or comma-separated.
+        type: string
+        default: x86_64 aarch64
+      alpine-branch:
+        description: Alpine release branch, as in the consumer's apk registryUrls (e.g. v3.24).
+        type: string
+        required: true
+      components:
+        description: Alpine repository components, space- or comma-separated.
+        type: string
+        default: main community
+      max-attempts:
+        description: Leave a run alone once it has reached this attempt number (3 = at most two automatic reruns).
+        type: number
+        default: 3
+      dry-run:
+        description: Log what would be rerun without rerunning anything.
+        type: boolean
+        default: false
+
+permissions: {}
+
+jobs:
+  rerun:
+    name: Rerun apk arch-lag failures
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    # Two overlapping ticks would both see the same failed run.
+    concurrency:
+      group: apk-arch-rerun
+      cancel-in-progress: false
+    permissions:
+      actions: write
+      pull-requests: read
+      contents: read
+    steps:
+      - name: Rerun builds whose apk pins have reached every architecture
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          WORKFLOW: ${{ inputs.workflow }}
+          DOCKERFILE: ${{ inputs.dockerfile }}
+          ARCHES: ${{ inputs.arches }}
+          ALPINE_BRANCH: ${{ inputs.alpine-branch }}
+          COMPONENTS: ${{ inputs.components }}
+          MAX_ATTEMPTS: ${{ inputs.max-attempts }}
+          DRY_RUN: ${{ inputs.dry-run }}
+          ALPINE_MIRROR: https://dl-cdn.alpinelinux.org/alpine
+        run: |
+          set -euo pipefail
+          die() { echo "::error::$*"; exit 1; }
+
+          # Inputs become URL path segments and API paths: validate them all.
+          [[ $GH_REPO =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || die "unexpected repository '$GH_REPO'"
+          [[ $WORKFLOW =~ ^[A-Za-z0-9_.-]+\.ya?ml$ ]] || die "workflow must be a file name like ci.yml (got '$WORKFLOW')"
+          [[ $DOCKERFILE =~ ^[A-Za-z0-9_./-]+$ && $DOCKERFILE != *..* && $DOCKERFILE != /* ]] \
+            || die "dockerfile must be a repo-relative path (got '$DOCKERFILE')"
+          [[ $ALPINE_BRANCH =~ ^(v[0-9]+\.[0-9]+|edge)$ ]] || die "alpine-branch must look like v3.24 (got '$ALPINE_BRANCH')"
+          [[ $MAX_ATTEMPTS =~ ^[1-9][0-9]*$ ]] || die "max-attempts must be a positive integer (got '$MAX_ATTEMPTS')"
+          arches=$(tr ',' ' ' <<<"$ARCHES" | xargs)
+          components=$(tr ',' ' ' <<<"$COMPONENTS" | xargs)
+          [[ -n $arches && $arches =~ ^[a-z0-9_]+( [a-z0-9_]+)*$ ]] || die "arches must be Alpine arch names (got '$ARCHES')"
+          [[ -n $components && $components =~ ^[a-z]+( [a-z]+)*$ ]] || die "components must be names like main (got '$COMPONENTS')"
+
+          work=$(mktemp -d)
+          trap 'rm -rf "$work"' EXIT
+
+          # <work>/<arch>.pkgs: one `name=version` line per package in every
+          # component. Fetched once, and only when some PR needs it.
+          loaded=
+          load_indexes() {
+            [[ -n $loaded ]] && return
+            local arch comp url
+            for arch in $arches; do
+              : >"$work/$arch.pkgs"
+              for comp in $components; do
+                url="$ALPINE_MIRROR/$ALPINE_BRANCH/$comp/$arch/APKINDEX.tar.gz"
+                curl -fsSL --retry 3 --max-time 120 -o "$work/index.tar.gz" "$url" || die "could not fetch $url"
+                # Only the APKINDEX member, to stdout. The archive is two
+                # concatenated tars (signature, then index), which tar reads
+                # fine but may complain about; the size check below is the
+                # real test.
+                tar -xzO -f "$work/index.tar.gz" APKINDEX >"$work/APKINDEX" 2>/dev/null || true
+                [[ -s $work/APKINDEX ]] || die "no APKINDEX in $url"
+                awk '
+                  /^P:/ { p = substr($0, 3) }
+                  /^V:/ { v = substr($0, 3) }
+                  /^\r?$/ { if (p != "" && v != "") print p "=" v; p = v = "" }
+                  END { if (p != "" && v != "") print p "=" v }
+                ' "$work/APKINDEX" >>"$work/$arch.pkgs"
+              done
+            done
+            loaded=1
+          }
+
+          # Every exact `name=version` argument of an `apk add`, read the way
+          # Docker reads the file: comment lines drop out even inside a `\`
+          # continuation, and a continued line ends at the first line without
+          # one. Each logical line is cut at && || ; | so only the apk command's
+          # own arguments count. Flags, $VARS and `~`/`>` constraints are not
+          # exact pins and are skipped.
+          pins_of() {
+            awk '
+              function flush(   n, segs, i, m, t, j, state) {
+                n = split(buf, segs, /&&|\|\||;|\|/)
+                for (i = 1; i <= n; i++) {
+                  m = split(segs[i], t, /[ \t\r]+/)
+                  state = 0
+                  for (j = 1; j <= m; j++) {
+                    if (t[j] == "") continue
+                    if (state == 0) { if (t[j] == "apk") state = 1 }
+                    else if (state == 1) { if (t[j] == "add") state = 2; else if (t[j] !~ /^-/) state = (t[j] == "apk") }
+                    else if (t[j] ~ /^[A-Za-z0-9][A-Za-z0-9._+-]*=[A-Za-z0-9][A-Za-z0-9._+-]*$/) print t[j]
+                  }
+                }
+                buf = ""
+              }
+              /^[ \t]*#/ { next }
+              {
+                line = $0
+                sub(/\r$/, "", line)
+                if (sub(/\\[ \t]*$/, "", line)) { buf = buf line " "; next }
+                buf = buf line
+                flush()
+              }
+              END { if (buf != "") flush() }
+            ' "$1" | sort -u
+          }
+
+          note() { echo "$*"; echo "- $*" >>"${GITHUB_STEP_SUMMARY:-/dev/null}"; }
+
+          # gh pages internally; the fleet sets prConcurrentLimit 0 (no cap).
+          gh pr list --state open --author app/renovate --limit 1000 \
+            --json number,headRefOid,author \
+            --jq '.[] | select(.author.login == "app/renovate") | "\(.number) \(.headRefOid)"' >"$work/prs"
+          [[ -s $work/prs ]] || { note "No open Renovate PRs."; exit 0; }
+
+          # fd 3, so nothing in the loop can eat the PR list from stdin.
+          while read -r pr sha <&3; do
+            # event=pull_request: a workflow_dispatch on the Renovate branch makes
+            # a newer run at the same SHA that is not the PR's check.
+            run=$(gh api "repos/$GH_REPO/actions/workflows/$WORKFLOW/runs?event=pull_request&head_sha=$sha&per_page=1" \
+              --jq '.workflow_runs[0] // empty | "\(.id) \(.status) \(.conclusion) \(.run_attempt)"')
+            if [[ -z $run ]]; then note "#$pr: no $WORKFLOW run for ${sha:0:7}."; continue; fi
+            read -r id status conclusion attempt <<<"$run"
+            if [[ $status != completed || $conclusion != failure ]]; then
+              note "#$pr: $WORKFLOW run $id is $status/$conclusion; nothing to do."; continue
+            fi
+            if (( attempt >= MAX_ATTEMPTS )); then
+              echo "::warning::#$pr: $WORKFLOW run $id has failed $attempt attempts; leaving it for a human."
+              note "#$pr: run $id at attempt $attempt (max-attempts $MAX_ATTEMPTS); left alone."; continue
+            fi
+            # To a file, not piped into grep -q: under pipefail an early grep
+            # exit would SIGPIPE gh and read as "no match".
+            if ! gh run view "$id" --log-failed >"$work/log" 2>/dev/null; then
+              echo "::warning::#$pr: could not read the failed-job log of run $id."; continue
+            fi
+            if ! grep -qF 'unable to select packages' "$work/log"; then
+              note "#$pr: run $id failed for another reason; left alone."; continue
+            fi
+            if ! gh api "repos/$GH_REPO/contents/$DOCKERFILE?ref=$sha" \
+                 -H 'Accept: application/vnd.github.raw' >"$work/Dockerfile" 2>/dev/null; then
+              echo "::warning::#$pr: no $DOCKERFILE at ${sha:0:7}."; continue
+            fi
+            pins=$(pins_of "$work/Dockerfile")
+            if [[ -z $pins ]]; then
+              echo "::warning::#$pr: no exact apk add pins found in $DOCKERFILE; not rerunning blind."; continue
+            fi
+            echo "#$pr: pins: ${pins//$'\n'/ }"
+            load_indexes
+            missing=0
+            for pin in $pins; do
+              for arch in $arches; do
+                if ! grep -qxF "$pin" "$work/$arch.pkgs"; then
+                  note "#$pr: $pin is not on $arch yet ($ALPINE_BRANCH: $components)."
+                  missing=$((missing + 1))
+                fi
+              done
+            done
+            if (( missing )); then
+              note "#$pr: run $id left alone until every architecture has every pin."; continue
+            fi
+            if [[ $DRY_RUN == true ]]; then
+              note "#$pr: every pin is on every architecture; would rerun run $id (dry-run)."
+            else
+              # A run someone else already restarted refuses this; not our failure.
+              if ! gh run rerun "$id" --failed; then
+                echo "::warning::#$pr: could not rerun run $id (already rerunning?)."; continue
+              fi
+              echo "::notice::#$pr: every pin is on every architecture; reran the failed jobs of run $id."
+              note "#$pr: reran the failed jobs of run $id."
+            fi
+          done 3<"$work/prs"
