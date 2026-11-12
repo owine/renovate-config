@@ -97,7 +97,7 @@ case "$1 $2" in
   "run rerun") echo "$3 $4" >>"$FIX/reruns"; [[ ! -f $FIX/rerun-fails-$3 ]] ;;
   "api "*)
     case "$2" in
-      */actions/workflows/*/runs\\?head_sha=*)
+      */actions/workflows/*/runs\\?*)
         sha=\${2#*head_sha=}; sha=\${sha%%&*}
         [[ -f $FIX/run-$sha ]] && cat "$FIX/run-$sha"; exit 0 ;;
       */contents/*)
@@ -267,7 +267,12 @@ const TORTURE_PINS = 'build-base=0.5-r4 curl=8.23.0-r0 postgresql18-client=18.6-
   check('carries on past a rerun GitHub refuses', r.out.includes('#110: could not rerun run 9110'), show(r));
   check('reads the pins the way Docker does', r.out.includes(`#108: pins: ${TORTURE_PINS}`), show(r));
   check('reads the Dockerfile at the PR head', r.calls.includes('gh api repos/owine/fixture/contents/Dockerfile?ref=a101 '), r.calls);
-  check('asks for the runs of the given workflow at the PR head', r.calls.includes('repos/owine/fixture/actions/workflows/test.yml/runs?head_sha=a101&per_page=1'), r.calls);
+  check(
+    'asks only for pull_request runs of the given workflow at the PR head',
+    r.calls.includes('repos/owine/fixture/actions/workflows/test.yml/runs?event=pull_request&head_sha=a101&per_page=1'),
+    r.calls,
+  );
+  check('lists open Renovate PRs past one page', /gh pr list .*--limit 1000 /.test(r.calls), r.calls);
   check('fetches each architecture × component index once', (r.calls.match(/^curl /gm) ?? []).length === 4, r.calls);
   check('writes a job summary', r.summary.includes('- #101: reran the failed jobs of run 9101.'), r.summary);
 }
