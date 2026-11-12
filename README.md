@@ -86,6 +86,16 @@ and grouping rather than installing release-drafter.
 mock octokit, and checks that it counts only the entries above the compare line
 and writes only to a draft that has something to count.
 
+`test/apk-arch-rerun.mjs` runs the step script of the reusable
+`apk-arch-rerun.yml`, read out of the YAML with the Renovate dist's parser,
+under bash with fake `gh` and `curl` on `PATH`. Its APKINDEX fixtures are
+built the way Alpine builds them (a truncated signature tar, then the index
+tar, each gzipped and concatenated). It checks that only an apk-index failure
+below `max-attempts` is rerun, that a pin missing on any architecture blocks
+the rerun and is named, that the Dockerfile's pins are read the way Docker
+reads them, and that bad inputs exit 1 before any call is made. It also pins
+the job's three permissions and that no step uses an action.
+
 Exit codes: `0` pass, `1` a behavior regression, `2` the Renovate dist moved
 (a layout problem, not a config one — likely an image bump).
 
@@ -533,6 +543,78 @@ g. Before the human publishes, check that the latest `main` build is green (`gh 
 
   Virtual packages (`--virtual .build-deps`), local `.apk` files and provider
   deps (`so:`, `cmd:`) are ignored outright.
+
+- **apk architecture lag: rerun the build, don't soak it.** Alpine publishes
+  each architecture separately, and either one can be late by as long as its
+  build takes. nodejs 24.22.3-r0 reached aarch64 2h32m after x86_64. The other
+  packages in that rollout were 14s to 5m apart, one of them with aarch64
+  *first*. A multi-arch build that runs inside the gap fails on the late
+  architecture with `unable to select packages … breaks: world[pkg=ver]`
+  (claude-terminal-home-assistant #558, which missed aarch64 by 6 minutes).
+  `minimumReleaseAge` can't help. The apk datasource dates a release by the
+  APKINDEX `t:` field, the source commit time, which is the same on every
+  architecture (for that nodejs, 7h before x86_64 even published). And the
+  index keeps only the newest build, so during the gap no pin builds
+  everywhere and main's own pin is already gone from the early architecture. A
+  soak only lengthens that window. `alpine.json` keeps `0 days` on purpose.
+
+  The fix is to rerun the failed jobs once every architecture has the pins.
+  The reusable workflow
+  [`.github/workflows/apk-arch-rerun.yml`](.github/workflows/apk-arch-rerun.yml)
+  does exactly that. For each open renovate[bot] PR whose latest build run
+  failed with `unable to select packages` in its log, it reads the `apk add`
+  pins from the PR head's Dockerfile and looks each one up in the APKINDEX of
+  every architecture and component. If every pin is everywhere, it runs
+  `gh run rerun <id> --failed`. Otherwise it logs which pin is missing where
+  and tries again next tick. It leaves any other failure alone, stops at
+  `max-attempts` (default 3, so at most two automatic reruns), and only ever
+  reads the indexes as text. All six `:alpine` consumers build amd64 + arm64,
+  so each one carries this caller as
+  `.github/workflows/apk-arch-rerun.yml`:
+
+  ```yaml
+  name: apk arch-lag rerun
+
+  on:
+    schedule:
+      - cron: '17,47 * * * *'
+    workflow_dispatch:
+
+  permissions:
+    actions: write
+    pull-requests: read
+    contents: read
+
+  jobs:
+    rerun:
+      uses: owine/renovate-config/.github/workflows/apk-arch-rerun.yml@main
+      with:
+        workflow: ci.yml          # the workflow that builds the image on PRs
+        dockerfile: Dockerfile
+        alpine-branch: v3.24      # same as branch= in the apk registryUrls
+        # arches: x86_64 aarch64  (default; Alpine's names, not Docker's)
+        # components: main community  (default)
+        # dry-run: true           (log only; use it for the first dispatch)
+  ```
+
+  | Repo | `workflow` | `dockerfile` |
+  | --- | --- | --- |
+  | claude-terminal-home-assistant | `test.yml` | `claude-terminal/Dockerfile` |
+  | ha-hetrixtools-agent | `boot.yaml` | `hetrixtools-agent/Dockerfile` |
+  | doc-scanner | `ci.yml` | `Dockerfile` |
+  | house-manager | `ci.yml` | `Dockerfile` |
+  | labelprint | `ci.yml` | `Dockerfile` |
+  | nut-cgi | `build.yml` | `Dockerfile` |
+
+  The caller follows `@main` like every preset here, so a merge to this
+  workflow is live in all six on their next tick. `alpine-branch` is a second
+  place the Alpine line is written: bump it together with the `registryUrls`
+  `branch=`. A stale one fails safe, because pins then show up as missing and
+  nothing is rerun. The job exits 1 only for a caller problem (a bad input, an
+  index it can't fetch), so a misconfigured caller shows red instead of
+  quietly doing nothing. A pin in a build stage that runs on only one
+  platform is still checked on every architecture. That is conservative: the
+  worst case is waiting one more tick.
 
 - **`node:*-alpine` bumps are gated to manual review.** A repo whose Alpine line
   comes from the Node image (`node:24.19.0-alpine` is Alpine 3.24.1) has the

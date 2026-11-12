@@ -69,6 +69,13 @@ jobs:
       - name: Test release summary script
         run: node test/release-summary.mjs
 
+      # Six :alpine consumers call apk-arch-rerun.yml from main on a cron;
+      # nothing here runs it for real. Runs its step script against fake gh
+      # and curl: only an apk-index failure is rerun, and only once every
+      # pin is on every architecture.
+      - name: Test apk arch-lag rerun
+        run: node test/apk-arch-rerun.mjs
+
       - name: Validate Renovate presets
         run: |
           renovate-config-validator --strict \

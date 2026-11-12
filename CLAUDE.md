@@ -7,6 +7,10 @@ This repo is the fleet's shared config hub for two tools:
 - **The release-drafter base config** (`release-drafter.yml`), consumed by ten
   repos as `_extends: owine/renovate-config:/release-drafter.yml`.
 
+It also hosts one reusable workflow, `.github/workflows/apk-arch-rerun.yml`,
+which the six `:alpine` consumers call from `@main` on a cron (README,
+Consumer notes, apk architecture lag).
+
 `README.md` is the human reference for both: Usage, Presets, Tests, Commit
 types & release notes, Releases: release-drafter (with the per-shape canonical
 workflows and the Onboarding a repo checklist). This file covers what an agent
@@ -35,12 +39,13 @@ renovate-config-validator --strict renovate.json default.json automerge.json \
 
 ## Everything here is live on merge
 
-Consumers resolve presets **and** `release-drafter.yml` from the default
-branch, unpinned. A merge to `main` changes every consumer's next Renovate run
-and every consumer's next draft. There is no staging. Prove a change first:
-Renovate changes with a dry-run fixture, release-drafter changes with a
-`dry-run: true` replay in one consumer (README, Onboarding a repo, Phase A
-step c).
+Consumers resolve presets, `release-drafter.yml` **and**
+`apk-arch-rerun.yml` from the default branch, unpinned. A merge to `main`
+changes every consumer's next Renovate run, next draft and next rerun tick.
+There is no staging. Prove a change first: Renovate changes with a dry-run
+fixture, release-drafter changes with a `dry-run: true` replay in one consumer
+(README, Onboarding a repo, Phase A step c), `apk-arch-rerun.yml` changes with
+`test/apk-arch-rerun.mjs` plus a `dry-run: true` dispatch in one consumer.
 
 ## Release-drafter: what couples to what
 
