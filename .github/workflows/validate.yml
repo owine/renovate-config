@@ -55,6 +55,14 @@ jobs:
       - name: Test commit-type grouping
         run: node test/commit-types.mjs
 
+      # default.json's separateMultipleMajor puts each grouped major's own
+      # number in its branch slug, so a group whose members sit on different
+      # major lines splits on every major (havethejetsmadetheplayoffsyet
+      # #303/#304). Asserts each coupled group's majors share one branch, and
+      # that toolchain-versions, which pairs by number, stays split.
+      - name: Test grouped-major branches
+        run: node test/group-majors.mjs
+
       # Consumers on release-drafter read that commit type back out of the
       # squash-merged PR title. Asserts the shared release-drafter.yml shows
       # every type the presets release on (`deps`, `fix`) and pre-excludes

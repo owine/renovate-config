@@ -56,10 +56,11 @@
       "groupName": "pytorch"
     },
     {
-      "description": "LangChain — `langchain`, `langchain-core`, and the `langchain-*` provider packages all pin langchain-core and move on one release cadence; the core interfaces change across minors, so even a non-major skew can break provider imports.",
+      "description": "LangChain — `langchain`, `langchain-core`, and the `langchain-*` provider packages all pin langchain-core and move on one release cadence; the core interfaces change across minors, so even a non-major skew can break provider imports. MAJORS SHARE ONE BRANCH (`separateMultipleMajor: false`): `langchain-core` caps `langsmith` below its next major while langsmith is on a different major number (0.x, and 0.x -> 1.0 IS a major to Renovate), so without it default.json's separateMultipleMajor slugs a core major and the langsmith major it needs to two `major-<n>-langchain` branches that cannot land apart. Trade-off: a member more than one major behind jumps straight to its latest major. Full reasoning on node.json's `stylelint` rule. NOT covered: `langchain-community` is still 0.x, so its bumps are minors to Renovate and a core major still splits from it major-vs-minor, which no separate* option closes.",
       "matchManagers": ["pep621"],
       "matchPackageNames": ["langchain", "/^langchain-/", "langsmith"],
-      "groupName": "langchain"
+      "groupName": "langchain",
+      "separateMultipleMajor": false
     },
     {
       "description": "OpenTelemetry Python — api/sdk/exporters/instrumentation share a registered global provider and are published as one release set; mixing versions silently drops spans. Mirrors the `/^@opentelemetry//` rule in node.json in intent, but the group name is deliberately DIFFERENT from it (`opentelemetry-js` there) — see the `boto3` rule above for why a shared name would merge the two ecosystems onto one branch.",
@@ -80,10 +81,11 @@
       "groupName": "django"
     },
     {
-      "description": "PRE-SEEDED. Hugging Face stack — transformers pins tokenizers to a narrow range and both track huggingface-hub's API; datasets and accelerate follow the same cadence.",
+      "description": "PRE-SEEDED. Hugging Face stack — transformers pins tokenizers to a narrow range and both track huggingface-hub's API; datasets and accelerate follow the same cadence. MAJORS SHARE ONE BRANCH (`separateMultipleMajor: false`): transformers and datasets cap huggingface-hub below its NEXT major while sitting on their own major numbers, and their majors are cut for a new hub major (transformers 5 was the first to accept hub 1.x), so without it default.json's separateMultipleMajor slugs a transformers major and the hub major it requires to two `major-<n>-huggingface` branches, each failing to resolve against the other's pinned old version. Trade-off: a member more than one major behind jumps straight to its latest major. Full reasoning on node.json's `stylelint` rule.",
       "matchManagers": ["pep621"],
       "matchPackageNames": ["transformers", "tokenizers", "huggingface-hub", "datasets", "accelerate"],
-      "groupName": "huggingface"
+      "groupName": "huggingface",
+      "separateMultipleMajor": false
     },
     {
       "description": "PRE-SEEDED. numpy + scipy + pandas. CHURN REDUCTION, NOT BREAK PREVENTION — stated plainly so the justification is not misread: these are independent projects and a split major usually resolves fine. They are grouped only because scipy and pandas compile against numpy's C ABI, so a numpy major is the event that drags the other two, and reviewing them on three branches hides that. Do NOT extend this rule to the wider scientific stack on the same reasoning.",
