@@ -34,10 +34,11 @@
       "groupName": "github-actions-setup"
     },
     {
-      "description": "GitHub Actions artifact family — upload + download must stay paired",
+      "description": "GitHub Actions artifact family — upload + download must stay paired. The pairing is the artifact backend, not a declared range (Actions have no peers, so nothing warns): artifacts uploaded with upload-artifact v4 cannot be downloaded by download-artifact v3, and a split there breaks the job at runtime. Both crossed that line on the same number, but they no longer share one (each has since taken its own Node-runtime majors), so the next backend break would ship on two different numbers. MAJORS SHARE ONE BRANCH (`separateMultipleMajor: false`): without it default.json's separateMultipleMajor slugs each to `major-<its own new major>-github-actions-artifact` and this group never pairs them on the one update type it exists for. Trade-off: a member more than one major behind jumps straight to its latest major. Full reasoning on node.json's `stylelint` rule.",
       "matchManagers": ["github-actions"],
       "matchPackageNames": ["actions/upload-artifact", "actions/download-artifact"],
-      "groupName": "github-actions-artifact"
+      "groupName": "github-actions-artifact",
+      "separateMultipleMajor": false
     },
     {
       "description": "Docker actions family (build/login/metadata/buildx/qemu)",

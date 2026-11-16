@@ -71,6 +71,19 @@ review), plus indirect modules, `golang-x` and `postUpdateOptions`.
 `commit-types.mjs` checks that no group mixes a hidden type (`ci:`, `chore:`)
 with `deps:` (see Commit types & release notes below).
 
+`test/group-majors.mjs` checks the branch a group's **majors** land on, which
+the group's name alone doesn't decide. `default.json` sets `separateMultipleMajor`
+fleet-wide, so Renovate puts each update's own new major number in a grouped
+branch's slug (`major-<N>-<group>`). A group whose members sit on different
+major numbers then splits on every major: stylelint 17→18 and
+stylelint-config-standard 40→41 opened as `major-18-stylelint` and
+`major-41-stylelint`, and neither could land alone. Each coupled group carries
+`separateMultipleMajor: false` instead. The test sends real-shaped majors
+through Renovate's own `flattenUpdates` and asserts one branch per coupled
+group. It also asserts that `toolchain-versions`, which pairs `@types/node`
+with the runtime by major number, stays split, so the fix can't be moved into
+`default.json`.
+
 `test/release-drafter.mjs` closes the loop on the consumer side: it checks that
 the shared `release-drafter.yml` shows every commit type the presets release
 on and pre-excludes the hidden ones, and that a preset assigning a new type
