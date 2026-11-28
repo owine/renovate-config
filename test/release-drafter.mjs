@@ -313,7 +313,7 @@ for (const [titles, want, why] of [
     'update ghcr.io/home-assistant/base:3.24 docker digest to 992dc6a',
     'digest rebuilds of one tag',
   ],
-  [['deps: update all non-major dependencies', 'deps: update all non-major dependencies'], 'update all non-major dependencies', 'weekly group branch'],
+  [['deps: update all non-major dependencies', 'deps: update all non-major dependencies'], 'update all non-major dependencies', 'scheduled group branch'],
   [['deps: update dependency vite to v8.1.2', 'deps: update dependency vitest to v4.0.0'], null, 'different packages stay apart'],
   [['deps: update python docker tag to v3.14.1', 'deps: update dependency python to v3.14.1'], null, 'the image and the runtime stay apart'],
   [
